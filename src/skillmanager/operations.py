@@ -45,6 +45,23 @@ def clone_repo(url: str, dest: Path) -> OperationResult:
         return OperationResult(success=False, message=str(e))
 
 
+_UNCHECKED_BY_DEFAULT = frozenset({"docs", "tests", ".github", "flowchart"})
+
+
+def detect_skills(source_path: str | Path) -> list[tuple[str, bool]]:
+    """Return (rel_path, enabled_by_default) for each direct subdirectory of
+    source_path that contains at least one .md file at any depth."""
+    root = Path(source_path)
+    results: list[tuple[str, bool]] = []
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        if any(child.rglob("*.md")):
+            enabled = child.name not in _UNCHECKED_BY_DEFAULT
+            results.append((child.name, enabled))
+    return results
+
+
 def validate_local_path(path: str) -> OperationResult:
     """Check that a local path exists and is a directory."""
     p = Path(path).expanduser()

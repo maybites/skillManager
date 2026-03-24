@@ -6,6 +6,7 @@ import pytest
 from skillmanager.operations import (
     OperationResult,
     clone_repo,
+    detect_skills,
     make_dest_path,
     make_slug,
     validate_local_path,
@@ -107,3 +108,73 @@ def test_validate_local_path_expands_tilde(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     result = validate_local_path("~")
     assert result.success is True
+
+
+# --- detect_skills tests ---
+
+def test_detect_skills_finds_subdir_with_md(tmp_path):
+    skill_dir = tmp_path / "my-skill"
+    skill_dir.mkdir()
+    (skill_dir / "README.md").write_text("# skill")
+    results = detect_skills(tmp_path)
+    names = [r[0] for r in results]
+    assert "my-skill" in names
+
+
+def test_detect_skills_enabled_by_default(tmp_path):
+    skill_dir = tmp_path / "my-skill"
+    skill_dir.mkdir()
+    (skill_dir / "README.md").write_text("# skill")
+    results = detect_skills(tmp_path)
+    enabled = {r[0]: r[1] for r in results}
+    assert enabled["my-skill"] is True
+
+
+def test_detect_skills_default_disabled_folders(tmp_path):
+    for name in ("docs", "tests", ".github", "flowchart"):
+        d = tmp_path / name
+        d.mkdir()
+        (d / "README.md").write_text("# doc")
+    results = detect_skills(tmp_path)
+    enabled = {r[0]: r[1] for r in results}
+    for name in ("docs", "tests", ".github", "flowchart"):
+        assert enabled[name] is False, f"{name} should default to unchecked"
+
+
+def test_detect_skills_excludes_root(tmp_path):
+    (tmp_path / "README.md").write_text("# root")
+    results = detect_skills(tmp_path)
+    assert results == []
+
+
+def test_detect_skills_requires_md_at_any_depth(tmp_path):
+    skill_dir = tmp_path / "deep-skill"
+    skill_dir.mkdir()
+    nested = skill_dir / "sub"
+    nested.mkdir()
+    (nested / "page.md").write_text("# page")
+    results = detect_skills(tmp_path)
+    names = [r[0] for r in results]
+    assert "deep-skill" in names
+
+
+def test_detect_skills_ignores_dirs_without_md(tmp_path):
+    no_md = tmp_path / "no-md-dir"
+    no_md.mkdir()
+    (no_md / "script.py").write_text("# python")
+    results = detect_skills(tmp_path)
+    names = [r[0] for r in results]
+    assert "no-md-dir" not in names
+
+
+def test_detect_skills_only_direct_children(tmp_path):
+    """Only direct subdirs of source root are returned as candidates."""
+    skill_dir = tmp_path / "skill-a"
+    skill_dir.mkdir()
+    child = skill_dir / "child"
+    child.mkdir()
+    (child / "README.md").write_text("# child")
+    results = detect_skills(tmp_path)
+    names = [r[0] for r in results]
+    assert "skill-a" in names
+    assert "child" not in names

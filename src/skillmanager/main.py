@@ -7,7 +7,13 @@ from nicegui import app, ui
 
 from skillmanager.config import REPOS_DIR, load_config, save_config
 from skillmanager.models import Project, Source, SourceKind
-from skillmanager.operations import clone_repo, make_dest_path, validate_local_path
+from skillmanager.models import Skill
+from skillmanager.operations import (
+    clone_repo,
+    detect_skills,
+    make_dest_path,
+    validate_local_path,
+)
 
 ItemType = Union[Source, Project]
 
@@ -37,6 +43,57 @@ def run() -> None:
                 r.on("click", lambda _e, row=r, s=source: select_item(row, s))  # type: ignore[misc]
             return r
 
+        def _render_source_detail(panel: ui.column, source: Source) -> None:
+            panel.clear()
+            with panel:
+                ui.label(source.display_name).classes("text-xl font-bold mb-2")
+                ui.label(f"Kind: {source.kind.value}").classes("text-gray-600")
+                ui.label(f"Path: {source.path}").classes("text-gray-600 mb-4")
+
+                if not source.confirmed:
+                    ui.label("Confirm skills to enable symlinking").classes(
+                        "text-amber-700 bg-amber-50 border border-amber-300 "
+                        "rounded px-3 py-2 w-full mb-4"
+                    )
+
+                    candidates = detect_skills(source.path)
+                    if not candidates:
+                        ui.label("No skill folders detected.").classes(
+                            "text-gray-500 italic"
+                        )
+                        return
+
+                    ui.label("Detected skill folders:").classes(
+                        "font-semibold mb-2"
+                    )
+                    checkboxes: dict[str, ui.checkbox] = {}
+                    for rel_path, enabled in candidates:
+                        cb = ui.checkbox(rel_path, value=enabled)
+                        checkboxes[rel_path] = cb
+
+                    def on_confirm_skills() -> None:
+                        source.skills = [
+                            Skill(name=rel_path, rel_path=rel_path, enabled=True)
+                            for rel_path, cb in checkboxes.items()
+                            if cb.value
+                        ]
+                        source.confirmed = True
+                        save_config(config)
+                        _render_source_detail(panel, source)
+
+                    ui.button(
+                        "Confirm Skills", on_click=on_confirm_skills
+                    ).props("color=primary").classes("mt-4")
+                else:
+                    if source.skills:
+                        ui.label("Confirmed skills:").classes("font-semibold mb-2")
+                        for skill in source.skills:
+                            ui.label(f"• {skill.name}").classes("text-sm text-gray-700")
+                    else:
+                        ui.label("No skills confirmed.").classes(
+                            "text-gray-500 italic"
+                        )
+
         def select_item(row: ui.row, item: ItemType) -> None:
             prev = selected_row["ref"]
             if prev is not None:
@@ -47,13 +104,11 @@ def run() -> None:
             panel = detail_ref["panel"]
             if panel is None:
                 return
-            panel.clear()
-            with panel:
-                if isinstance(item, Source):
-                    ui.label(item.display_name).classes("text-xl font-bold mb-2")
-                    ui.label(f"Kind: {item.kind.value}").classes("text-gray-600")
-                    ui.label(f"Path: {item.path}").classes("text-gray-600")
-                else:
+            if isinstance(item, Source):
+                _render_source_detail(panel, item)
+            else:
+                panel.clear()
+                with panel:
                     ui.label(item.display_name).classes("text-xl font-bold mb-2")
                     ui.label(f"Path: {item.path}").classes("text-gray-600")
 
