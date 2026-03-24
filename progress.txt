@@ -1,4 +1,7 @@
 ## Codebase Patterns
+- `detect_skills(path)` returns `list[tuple[str, bool]]` — rel_path and enabled_by_default; folders in `_UNCHECKED_BY_DEFAULT` frozenset default to False
+- `_render_source_detail(panel, source)` pattern: function takes the panel and calls `panel.clear()` internally, allowing it to re-render in-place (used for confirm callback too)
+- When calling a render function that manages its own `panel.clear() + with panel:`, do NOT wrap the call in another `with panel:` from the caller
 - Use `monkeypatch` to override `_CONFIG_FILE` and `CONFIG_DIR` in config module for tests
 - TOML serialization via `tomllib` (stdlib, read) + `tomli-w` (write); convert dataclasses to plain dicts first
 - Enum values stored as strings in TOML (e.g. `kind = "remote"`)
@@ -15,4 +18,17 @@
   - pyproject.toml already had `[tool.pytest.ini_options]` or similar; check with `uv run pytest` directly
   - `tomllib` is Python 3.11 stdlib; no extra dep needed for reading
   - Module-level `_CONFIG_FILE` can be monkeypatched directly in tests for isolation
+---
+
+## 2026-03-24 - US-006
+- Added `detect_skills(source_path)` to `operations.py`: walks direct subdirs, finds those with any `.md` file at any depth; returns `(rel_path, enabled_by_default)` tuples with `docs/tests/.github/flowchart` defaulting to False
+- Added 7 tests for `detect_skills` in `tests/test_operations.py`
+- Updated `main.py`: replaced inline source detail rendering with `_render_source_detail()` helper that handles both unconfirmed (checkbox list + Confirm Skills button + banner) and confirmed (skill list) states
+- Unconfirmed sources show amber banner "Confirm skills to enable symlinking"
+- Clicking "Confirm Skills" saves checked skills to `source.skills`, sets `source.confirmed = True`, saves config, and re-renders panel
+- Files changed: src/skillmanager/operations.py, src/skillmanager/main.py, tests/test_operations.py
+- **Learnings for future iterations:**
+  - `_render_source_detail` manages its own `panel.clear()` — callers must NOT wrap it in another `with panel:` or double-clearing will occur with no error but confusing context nesting
+  - NiceGUI closures over loop variables: use default arg trick (`cb=cb` in lambdas) if ever putting lambdas in loops
+  - `pathlib.Path.rglob("*.md")` is lazy — wrapping in `any()` short-circuits on first match (good for perf)
 ---

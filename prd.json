@@ -106,7 +106,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Walk source.path subdirectories. A candidate is any dir with at least one .md file at any depth. Use os.walk or pathlib.rglob('*.md')."
     },
     {
