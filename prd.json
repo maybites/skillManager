@@ -71,7 +71,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Dialog only — git clone and path validation happen in US-005. This story is purely the UI shell."
     },
     {
