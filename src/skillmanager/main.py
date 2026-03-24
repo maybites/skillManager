@@ -8,13 +8,14 @@ from typing import Any, Union
 from nicegui import app, ui
 
 from skillmanager.config import REPOS_DIR, load_config, save_config
-from skillmanager.models import Project, Source, SourceKind
+from skillmanager.models import ConflictResolution, Project, Source, SourceKind
 from skillmanager.models import Skill
 from skillmanager.operations import (
     add_project,
     clone_repo,
     create_symlink,
     detect_skills,
+    find_owning_source,
     git_pull,
     make_dest_path,
     remove_symlink,
@@ -350,6 +351,75 @@ def run() -> None:
                         on_click=lambda: ui.notify("Coming soon"),
                     ).props("color=negative flat")
 
+        def _show_conflict_dialog(
+            skill: Skill,
+            new_source: Source,
+            existing_source: Source,
+            dst: Path,
+            new_src: Path,
+            cb: ui.checkbox,
+        ) -> None:
+            with ui.dialog() as dialog, ui.card().classes("w-[480px]"):
+                ui.label("Skill Conflict").classes(
+                    "text-xl font-bold mb-2 text-amber-700"
+                )
+                ui.label(
+                    f"The skill '{skill.name}' already has a symlink from "
+                    f"'{existing_source.display_name}'. Choose which source wins "
+                    f"for this target."
+                ).classes("text-gray-600 mb-4")
+
+                def on_choose_new() -> None:
+                    op_rm = remove_symlink(dst)
+                    if not op_rm.success:
+                        ui.notify(
+                            f"Failed to remove existing symlink: {op_rm.message}",
+                            type="negative",
+                        )
+                        dialog.close()
+                        return
+                    op_cr = create_symlink(new_src, dst)
+                    if op_cr.success:
+                        cb.set_value(True)
+                        config.conflict_resolutions = [
+                            r
+                            for r in config.conflict_resolutions
+                            if not (
+                                r.skill_name == skill.name
+                                and r.target_id == str(dst.parent)
+                            )
+                        ]
+                        config.conflict_resolutions.append(
+                            ConflictResolution(
+                                skill_name=skill.name,
+                                target_id=str(dst.parent),
+                                winner_source_id=new_source.id,
+                            )
+                        )
+                        save_config(config)
+                        ui.notify(
+                            f"Resolved: '{new_source.display_name}' wins",
+                            type="positive",
+                        )
+                    else:
+                        ui.notify(f"Failed: {op_cr.message}", type="negative")
+                    dialog.close()
+
+                def on_keep_existing() -> None:
+                    cb.set_value(False)
+                    dialog.close()
+
+                with ui.row().classes("w-full gap-2 mt-4"):
+                    ui.button(
+                        f"Use '{new_source.display_name}'",
+                        on_click=on_choose_new,
+                    ).props("color=primary")
+                    ui.button(
+                        f"Keep '{existing_source.display_name}'",
+                        on_click=on_keep_existing,
+                    ).props("flat")
+            dialog.open()
+
         def _render_matrix_view(panel: ui.column) -> None:
             panel.clear()
             with panel:
@@ -373,6 +443,17 @@ def run() -> None:
                 for project in config.projects:
                     targets.append((project.display_name, project.skills_dir))
 
+                # Detect conflicting skill names (same name across different sources)
+                skill_name_counts: dict[str, int] = {}
+                for _src in confirmed:
+                    for _sk in _src.skills:
+                        skill_name_counts[_sk.name] = (
+                            skill_name_counts.get(_sk.name, 0) + 1
+                        )
+                conflicting_names: set[str] = {
+                    n for n, c in skill_name_counts.items() if c > 1
+                }
+
                 # Header row
                 with ui.row().classes(
                     "items-center border-b-2 border-gray-300 pb-2 mb-2"
@@ -393,9 +474,16 @@ def run() -> None:
                     )
                     for skill in source.skills:
                         with ui.row().classes("items-center hover:bg-gray-50 rounded"):
-                            ui.label(skill.name).classes(
-                                "text-sm text-gray-600"
-                            ).style("min-width: 200px")
+                            with ui.row().classes("items-center gap-1").style(
+                                "min-width: 200px"
+                            ):
+                                ui.label(skill.name).classes("text-sm text-gray-600")
+                                if skill.name in conflicting_names:
+                                    ui.icon("warning").classes(
+                                        "text-amber-500 text-sm"
+                                    ).tooltip(
+                                        "Conflict: another source has a skill with the same name"
+                                    )
                             for _, target_dir in targets:
                                 symlink_path = target_dir / skill.name
                                 src_path = Path(source.path) / skill.rel_path
@@ -411,8 +499,24 @@ def run() -> None:
                                         _cb: ui.checkbox = cb,
                                         _src: Path = src_path,
                                         _dst: Path = symlink_path,
+                                        _source: Source = source,
+                                        _skill: Skill = skill,
                                     ) -> None:
                                         if e.value:
+                                            existing = find_owning_source(
+                                                _dst, config.sources
+                                            )
+                                            if existing and existing.id != _source.id:  # type: ignore[union-attr]
+                                                _cb.set_value(False)
+                                                _show_conflict_dialog(
+                                                    _skill,
+                                                    _source,
+                                                    existing,  # type: ignore[arg-type]
+                                                    _dst,
+                                                    _src,
+                                                    _cb,
+                                                )
+                                                return
                                             op = create_symlink(_src, _dst)
                                         else:
                                             op = remove_symlink(_dst)

@@ -4,12 +4,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from skillmanager.models import Skill, Source, SourceKind
 from skillmanager.operations import (
     OperationResult,
     add_project,
     clone_repo,
     create_symlink,
     detect_skills,
+    find_owning_source,
     git_pull,
     make_dest_path,
     make_slug,
@@ -366,3 +368,73 @@ def test_scan_broken_symlinks_multiple_dirs(tmp_path):
     broken = scan_broken_symlinks([dir_a, dir_b])
     assert bad_link in broken
     assert good_link not in broken
+
+
+# --- find_owning_source tests ---
+
+
+def _make_source(tmp_path: Path, src_id: str, skill_name: str) -> Source:
+    src_dir = tmp_path / src_id / skill_name
+    src_dir.mkdir(parents=True)
+    return Source(
+        id=src_id,
+        display_name=src_id,
+        kind=SourceKind.LOCAL,
+        path=str(tmp_path / src_id),
+        skills=[Skill(name=skill_name, rel_path=skill_name)],
+        confirmed=True,
+    )
+
+
+def test_find_owning_source_finds_match(tmp_path):
+    src_a = _make_source(tmp_path, "source_a", "my-skill")
+    src_b = _make_source(tmp_path, "source_b", "my-skill")
+    link = tmp_path / "skills" / "my-skill"
+    link.parent.mkdir(parents=True)
+    os.symlink(tmp_path / "source_a" / "my-skill", link)
+
+    result = find_owning_source(link, [src_a, src_b])
+    assert result is not None
+    assert result.id == "source_a"  # type: ignore[union-attr]
+
+
+def test_find_owning_source_no_link(tmp_path):
+    src_a = _make_source(tmp_path, "source_a", "my-skill")
+    link = tmp_path / "nonexistent"
+    result = find_owning_source(link, [src_a])
+    assert result is None
+
+
+def test_find_owning_source_unowned_link(tmp_path):
+    src_a = _make_source(tmp_path, "source_a", "my-skill")
+    # link points to a directory not owned by any source
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    link = tmp_path / "skills" / "my-skill"
+    link.parent.mkdir(parents=True)
+    os.symlink(other_dir, link)
+
+    result = find_owning_source(link, [src_a])
+    assert result is None
+
+
+def test_find_owning_source_empty_sources(tmp_path):
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    link = tmp_path / "skills" / "my-skill"
+    link.parent.mkdir(parents=True)
+    os.symlink(other_dir, link)
+
+    result = find_owning_source(link, [])
+    assert result is None
+
+
+def test_find_owning_source_unconfirmed_ignored(tmp_path):
+    src_a = _make_source(tmp_path, "source_a", "my-skill")
+    src_a.confirmed = False
+    link = tmp_path / "skills" / "my-skill"
+    link.parent.mkdir(parents=True)
+    os.symlink(tmp_path / "source_a" / "my-skill", link)
+
+    result = find_owning_source(link, [src_a])
+    assert result is None

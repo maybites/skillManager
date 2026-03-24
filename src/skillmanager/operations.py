@@ -3,6 +3,10 @@ import subprocess
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from skillmanager.models import Source
 
 
 @dataclass
@@ -121,6 +125,30 @@ def git_pull(repo_path: Path) -> OperationResult:
         return OperationResult(success=False, message="git not found in PATH.")
     except Exception as e:
         return OperationResult(success=False, message=str(e))
+
+
+def find_owning_source(link_path: Path, sources: "list[Source]") -> "Source | None":
+    """Return the Source whose skill is symlinked at link_path, or None.
+
+    Resolves the symlink target and compares against each confirmed source's
+    skill paths. Returns the first matching Source, or None if not found.
+    """
+    if not os.path.lexists(str(link_path)):
+        return None
+    try:
+        raw = os.readlink(str(link_path))
+        target = Path(raw) if Path(raw).is_absolute() else link_path.parent / raw
+        real_target = target.resolve()
+    except OSError:
+        return None
+    for src in sources:
+        if not getattr(src, "confirmed", False):
+            continue
+        for sk in getattr(src, "skills", []):
+            sk_path = (Path(src.path) / sk.rel_path).resolve()
+            if real_target == sk_path:
+                return src
+    return None
 
 
 def scan_broken_symlinks(target_dirs: list[Path]) -> list[Path]:
