@@ -5,6 +5,7 @@ import pytest
 
 from skillmanager.operations import (
     OperationResult,
+    add_project,
     clone_repo,
     detect_skills,
     make_dest_path,
@@ -166,6 +167,37 @@ def test_detect_skills_ignores_dirs_without_md(tmp_path):
     names = [r[0] for r in results]
     assert "no-md-dir" not in names
 
+
+# --- add_project tests ---
+
+def test_add_project_creates_skills_dir(tmp_path):
+    result = add_project(str(tmp_path))
+    assert result.success is True
+    assert (tmp_path / ".claude" / "skills").is_dir()
+
+
+def test_add_project_missing_path():
+    result = add_project("/nonexistent/path/xyz_abc_123")
+    assert result.success is False
+    assert "does not exist" in result.message
+
+
+def test_add_project_file_path(tmp_path):
+    f = tmp_path / "file.txt"
+    f.write_text("hello")
+    result = add_project(str(f))
+    assert result.success is False
+    assert "not a directory" in result.message
+
+
+def test_add_project_idempotent(tmp_path):
+    add_project(str(tmp_path))
+    result = add_project(str(tmp_path))
+    assert result.success is True
+    assert (tmp_path / ".claude" / "skills").is_dir()
+
+
+# --- detect_skills tests ---
 
 def test_detect_skills_only_direct_children(tmp_path):
     """Only direct subdirs of source root are returned as candidates."""

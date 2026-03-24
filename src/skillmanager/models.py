@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 
 
 class SourceKind(Enum):
@@ -31,6 +32,10 @@ class Project:
     id: str
     display_name: str
     path: str
+
+    @property
+    def skills_dir(self) -> Path:
+        return Path(self.path) / ".claude" / "skills"
 
 
 @dataclass

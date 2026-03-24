@@ -9,6 +9,7 @@ from skillmanager.config import REPOS_DIR, load_config, save_config
 from skillmanager.models import Project, Source, SourceKind
 from skillmanager.models import Skill
 from skillmanager.operations import (
+    add_project,
     clone_repo,
     detect_skills,
     make_dest_path,
@@ -27,13 +28,14 @@ def run() -> None:
         selected_row: dict[str, ui.row | None] = {"ref": None}
         detail_ref: dict[str, ui.column | None] = {"panel": None}
         sources_container_ref: dict[str, ui.column | None] = {"col": None}
+        projects_container_ref: dict[str, ui.column | None] = {"col": None}
 
         def _last_segment(val: str) -> str:
             seg = val.rstrip("/").rsplit("/", 1)[-1]
             return seg.removesuffix(".git") if seg else ""
 
         def _make_source_row(source: Source) -> ui.row:
-            with sources_container_ref["col"]:  # type: ignore[arg-type]
+            with sources_container_ref["col"]:  # type: ignore[arg-type,union-attr]
                 r = ui.row().classes(
                     "cursor-pointer w-full px-3 py-1 rounded items-center gap-2"
                 )
@@ -42,6 +44,24 @@ def run() -> None:
                     ui.label(source.display_name).classes("text-sm")
                 r.on("click", lambda _e, row=r, s=source: select_item(row, s))  # type: ignore[misc]
             return r
+
+        def _make_project_row(project: Project) -> ui.row:
+            with projects_container_ref["col"]:  # type: ignore[arg-type,union-attr]
+                r = ui.row().classes(
+                    "cursor-pointer w-full px-3 py-1 rounded items-center gap-2"
+                )
+                with r:
+                    ui.icon("work_outline").classes("text-sm text-gray-500")
+                    ui.label(project.display_name).classes("text-sm")
+                r.on("click", lambda _e, row=r, p=project: select_item(row, p))  # type: ignore[misc]
+            return r
+
+        def _render_project_detail(panel: ui.column, project: Project) -> None:
+            panel.clear()
+            with panel:
+                ui.label(project.display_name).classes("text-xl font-bold mb-2")
+                ui.label(f"Path: {project.path}").classes("text-gray-600")
+                ui.label(f"Skills dir: {project.skills_dir}").classes("text-gray-600")
 
         def _render_source_detail(panel: ui.column, source: Source) -> None:
             panel.clear()
@@ -107,10 +127,69 @@ def run() -> None:
             if isinstance(item, Source):
                 _render_source_detail(panel, item)
             else:
-                panel.clear()
-                with panel:
-                    ui.label(item.display_name).classes("text-xl font-bold mb-2")
-                    ui.label(f"Path: {item.path}").classes("text-gray-600")
+                _render_project_detail(panel, item)
+
+        def open_add_project_dialog() -> None:
+            with ui.dialog() as dialog, ui.card().classes("w-96"):
+                ui.label("Add Project").classes("text-xl font-bold mb-4")
+
+                path_input = ui.input(
+                    "Project Path",
+                    placeholder="/path/to/my-project",
+                ).classes("w-full")
+
+                name_input = ui.input(
+                    "Display Name",
+                    placeholder="Optional — defaults to folder name",
+                ).classes("w-full")
+
+                status_label = ui.label("").classes(
+                    "text-red-600 text-sm min-h-[1.25rem] w-full"
+                )
+
+                def on_path_change(e: Any) -> None:
+                    seg = _last_segment(e.value or "")
+                    if seg and not name_input.value:
+                        name_input.set_value(seg)
+
+                path_input.on_value_change(on_path_change)  # type: ignore[misc]
+
+                def on_add_project() -> None:
+                    raw_path = path_input.value.strip()
+                    display = name_input.value.strip()
+                    status_label.set_text("")
+
+                    if not raw_path:
+                        status_label.set_text("Please enter a project path.")
+                        return
+
+                    expanded = str(Path(raw_path).expanduser())
+                    if any(p.path == expanded for p in config.projects):
+                        status_label.set_text("This path is already registered.")
+                        return
+
+                    op = add_project(raw_path)
+                    if not op.success:
+                        status_label.set_text(op.message)
+                        return
+
+                    display = display or _last_segment(raw_path)
+                    project = Project(
+                        id=uuid.uuid4().hex,
+                        display_name=display,
+                        path=expanded,
+                    )
+                    config.projects.append(project)
+                    save_config(config)
+                    dialog.close()
+                    new_row = _make_project_row(project)
+                    select_item(new_row, project)
+
+                with ui.row().classes("w-full justify-end mt-4 gap-2"):
+                    ui.button("Cancel", on_click=dialog.close).props("flat")
+                    ui.button("Add", on_click=on_add_project).props("color=primary")
+
+            dialog.open()
 
         def open_add_source_dialog() -> None:
             with ui.dialog() as dialog, ui.card().classes("w-96"):
@@ -244,17 +323,13 @@ def run() -> None:
                         ).props("flat dense color=primary").classes("w-full mt-1")
 
                     with ui.expansion("Projects", icon="work").classes("w-full"):
+                        projects_container = ui.column().classes("w-full gap-0")
+                        projects_container_ref["col"] = projects_container
                         for project in config.projects:
-                            r = ui.row().classes(
-                                "cursor-pointer w-full px-3 py-1 rounded items-center gap-2"
-                            )
-                            with r:
-                                ui.icon("work_outline").classes("text-sm text-gray-500")
-                                ui.label(project.display_name).classes("text-sm")
-                            r.on("click", lambda _e, row=r, p=project: select_item(row, p))  # type: ignore[misc]
+                            _make_project_row(project)
                         ui.button(
                             "+ Add",
-                            on_click=lambda: ui.notify("Add project dialog — coming soon"),
+                            on_click=open_add_project_dialog,
                         ).props("flat dense color=primary").classes("w-full mt-1")
 
             with splitter.after:

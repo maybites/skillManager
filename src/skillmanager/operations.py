@@ -62,6 +62,18 @@ def detect_skills(source_path: str | Path) -> list[tuple[str, bool]]:
     return results
 
 
+def add_project(path: str) -> OperationResult:
+    """Validate project path exists and auto-create .claude/skills/ inside it."""
+    p = Path(path).expanduser()
+    if not p.exists():
+        return OperationResult(success=False, message=f"Path does not exist: {p}")
+    if not p.is_dir():
+        return OperationResult(success=False, message=f"Path is not a directory: {p}")
+    skills_dir = p / ".claude" / "skills"
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    return OperationResult(success=True)
+
+
 def validate_local_path(path: str) -> OperationResult:
     """Check that a local path exists and is a directory."""
     p = Path(path).expanduser()
