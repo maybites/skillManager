@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Any, Union
 
 from nicegui import app, ui
 
@@ -16,6 +16,68 @@ def run() -> None:
         config = load_config()
         selected_row: dict[str, ui.row | None] = {"ref": None}
         detail_ref: dict[str, ui.column | None] = {"panel": None}
+
+        def _last_segment(val: str) -> str:
+            seg = val.rstrip("/").rsplit("/", 1)[-1]
+            return seg.removesuffix(".git") if seg else ""
+
+        def open_add_source_dialog() -> None:
+            with ui.dialog() as dialog, ui.card().classes("w-96"):
+                ui.label("Add Skill Source").classes("text-xl font-bold mb-4")
+
+                mode_toggle = ui.toggle(
+                    {"remote": "Remote URL", "local": "Local Path"}, value="remote"
+                ).classes("mb-3")
+
+                url_col = ui.column().classes("w-full gap-2")
+                with url_col:
+                    url_input = ui.input(
+                        "Git URL",
+                        placeholder="https://github.com/user/repo.git",
+                    ).classes("w-full")
+
+                path_col = ui.column().classes("w-full gap-2")
+                with path_col:
+                    path_input = ui.input(
+                        "Directory Path",
+                        placeholder="/path/to/skills",
+                    ).classes("w-full")
+                path_col.visible = False
+
+                name_input = ui.input(
+                    "Display Name",
+                    placeholder="Optional — defaults to repo/folder name",
+                ).classes("w-full")
+
+                def on_mode_change(e: Any) -> None:
+                    is_remote = e.value == "remote"
+                    url_col.visible = is_remote
+                    path_col.visible = not is_remote
+
+                def on_url_change(e: Any) -> None:
+                    seg = _last_segment(e.value or "")
+                    if seg and not name_input.value:
+                        name_input.set_value(seg)
+
+                def on_path_change(e: Any) -> None:
+                    seg = _last_segment(e.value or "")
+                    if seg and not name_input.value:
+                        name_input.set_value(seg)
+
+                mode_toggle.on_value_change(on_mode_change)  # type: ignore[misc]
+                url_input.on_value_change(on_url_change)  # type: ignore[misc]
+                path_input.on_value_change(on_path_change)  # type: ignore[misc]
+
+                with ui.row().classes("w-full justify-end mt-4 gap-2"):
+                    ui.button("Cancel", on_click=dialog.close).props("flat")
+                    ui.button(
+                        "Add",
+                        on_click=lambda: ui.notify(
+                            "Clone / path validation coming in US-005"
+                        ),
+                    ).props("color=primary")
+
+            dialog.open()
 
         def select_item(row: ui.row, item: ItemType) -> None:
             prev = selected_row["ref"]
@@ -51,7 +113,7 @@ def run() -> None:
                             r.on("click", lambda _e, row=r, s=source: select_item(row, s))  # type: ignore[misc]
                         ui.button(
                             "+ Add",
-                            on_click=lambda: ui.notify("Add source dialog — coming soon"),
+                            on_click=open_add_source_dialog,
                         ).props("flat dense color=primary").classes("w-full mt-1")
 
                     with ui.expansion("Projects", icon="work").classes("w-full"):
