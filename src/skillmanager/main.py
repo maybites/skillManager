@@ -16,8 +16,10 @@ from skillmanager.operations import (
     create_symlink,
     detect_skills,
     find_owning_source,
+    find_source_symlinks,
     git_pull,
     make_dest_path,
+    remove_source_repo,
     remove_symlink,
     scan_broken_symlinks,
     validate_local_path,
@@ -69,6 +71,15 @@ def run() -> None:
                     ui.label(project.display_name).classes("text-sm")
                 r.on("click", lambda _e, row=r, p=project: select_item(row, p))  # type: ignore[misc]
             return r
+
+        def _refresh_sources_sidebar() -> None:
+            col = sources_container_ref["col"]
+            if col is None:
+                return
+            col.clear()
+            selected_row["ref"] = None
+            for source in config.sources:
+                _make_source_row(source)
 
         def _refresh_projects_sidebar() -> None:
             col = projects_container_ref["col"]
@@ -353,6 +364,57 @@ def run() -> None:
                     ui.button("Close", on_click=dialog.close).props("flat")
             dialog.open()
 
+        def _confirm_remove_source(source: Source) -> None:
+            active_links = find_source_symlinks(source, _all_target_dirs())
+            with ui.dialog() as dialog, ui.card().classes("w-[520px]"):
+                ui.label("Remove Skill Source").classes("text-xl font-bold mb-2")
+                ui.label(
+                    f"Remove '{source.display_name}' from Skill Manager?"
+                ).classes("text-gray-600 mb-2")
+                if source.kind == SourceKind.REMOTE:
+                    ui.label(
+                        "The cloned repository folder will also be deleted from disk."
+                    ).classes("text-amber-700 text-sm mb-2")
+                if active_links:
+                    ui.label(
+                        f"The following {len(active_links)} symlink(s) will be deleted:"
+                    ).classes("font-semibold text-sm mb-1")
+                    for lp in active_links:
+                        ui.label(str(lp)).classes("text-sm font-mono text-gray-600 ml-2")
+                else:
+                    ui.label("No active symlinks to clean up.").classes(
+                        "text-gray-500 text-sm italic mb-2"
+                    )
+
+                def on_confirm_remove_source() -> None:
+                    # Remove all symlinks
+                    for lp in active_links:
+                        remove_symlink(lp)
+                    # Delete remote repo from disk
+                    if source.kind == SourceKind.REMOTE:
+                        remove_source_repo(source.path)
+                    # Remove from config
+                    config.sources[:] = [
+                        s for s in config.sources if s.id != source.id
+                    ]
+                    save_config(config)
+                    dialog.close()
+                    _refresh_sources_sidebar()
+                    panel = detail_ref["panel"]
+                    if panel:
+                        panel.clear()
+                        with panel:
+                            ui.label("Select an item to see details").classes(
+                                "text-gray-400 text-lg"
+                            )
+
+                with ui.row().classes("w-full justify-end mt-4 gap-2"):
+                    ui.button("Cancel", on_click=dialog.close).props("flat")
+                    ui.button("Remove", on_click=on_confirm_remove_source).props(
+                        "color=negative"
+                    )
+            dialog.open()
+
         def _render_source_detail(panel: ui.column, source: Source) -> None:
             panel.clear()
             with panel:
@@ -468,11 +530,17 @@ def run() -> None:
                         disabled_btn.tooltip(
                             "Update is only available for remote sources"
                         )
+                    def on_remove_source_click(
+                        _e: Any, _s: Source = source
+                    ) -> None:
+                        _confirm_remove_source(_s)
+
                     ui.button(
                         "Remove",
                         icon="delete",
-                        on_click=lambda: ui.notify("Coming soon"),
-                    ).props("color=negative flat")
+                    ).props("color=negative flat").on(
+                        "click", on_remove_source_click  # type: ignore[misc]
+                    )
 
         def _show_conflict_dialog(
             skill: Skill,

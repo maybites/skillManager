@@ -12,9 +12,11 @@ from skillmanager.operations import (
     create_symlink,
     detect_skills,
     find_owning_source,
+    find_source_symlinks,
     git_pull,
     make_dest_path,
     make_slug,
+    remove_source_repo,
     remove_symlink,
     scan_broken_symlinks,
     validate_local_path,
@@ -467,3 +469,72 @@ def test_find_owning_source_unconfirmed_ignored(tmp_path):
 
     result = find_owning_source(link, [src_a])
     assert result is None
+
+
+# --- find_source_symlinks tests ---
+
+
+def test_find_source_symlinks_finds_active(tmp_path):
+    src = _make_source(tmp_path, "source_a", "my-skill")
+    target_dir = tmp_path / "target_skills"
+    target_dir.mkdir()
+    link = target_dir / "my-skill"
+    os.symlink(tmp_path / "source_a" / "my-skill", link)
+
+    result = find_source_symlinks(src, [target_dir])
+    assert link in result
+
+
+def test_find_source_symlinks_ignores_other_sources(tmp_path):
+    src_a = _make_source(tmp_path, "source_a", "skill-a")
+    src_b = _make_source(tmp_path, "source_b", "skill-b")
+    target_dir = tmp_path / "target_skills"
+    target_dir.mkdir()
+    link_b = target_dir / "skill-b"
+    os.symlink(tmp_path / "source_b" / "skill-b", link_b)
+
+    result = find_source_symlinks(src_a, [target_dir])
+    assert link_b not in result
+    assert result == []
+
+
+def test_find_source_symlinks_ignores_missing_target_dir(tmp_path):
+    src = _make_source(tmp_path, "source_a", "my-skill")
+    missing_dir = tmp_path / "nonexistent"
+
+    result = find_source_symlinks(src, [missing_dir])
+    assert result == []
+
+
+def test_find_source_symlinks_multiple_targets(tmp_path):
+    src = _make_source(tmp_path, "source_a", "my-skill")
+    target1 = tmp_path / "target1"
+    target2 = tmp_path / "target2"
+    target1.mkdir()
+    target2.mkdir()
+    link1 = target1 / "my-skill"
+    link2 = target2 / "my-skill"
+    os.symlink(tmp_path / "source_a" / "my-skill", link1)
+    os.symlink(tmp_path / "source_a" / "my-skill", link2)
+
+    result = find_source_symlinks(src, [target1, target2])
+    assert link1 in result
+    assert link2 in result
+
+
+# --- remove_source_repo tests ---
+
+
+def test_remove_source_repo_deletes_directory(tmp_path):
+    repo_dir = tmp_path / "my-repo"
+    repo_dir.mkdir()
+    (repo_dir / "file.txt").write_text("content")
+
+    result = remove_source_repo(str(repo_dir))
+    assert result.success is True
+    assert not repo_dir.exists()
+
+
+def test_remove_source_repo_absent_is_ok(tmp_path):
+    result = remove_source_repo(str(tmp_path / "nonexistent"))
+    assert result.success is True

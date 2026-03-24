@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import uuid
 from dataclasses import dataclass
@@ -167,3 +168,40 @@ def scan_broken_symlinks(target_dirs: list[Path]) -> list[Path]:
             if os.path.lexists(str(entry)) and not os.path.exists(str(entry)):
                 broken.append(entry)
     return broken
+
+
+def find_source_symlinks(source: "Source", target_dirs: list[Path]) -> list[Path]:
+    """Return symlink paths across all target_dirs that point into source's skill folders."""
+    source_root = Path(source.path).resolve()
+    result: list[Path] = []
+    for target_dir in target_dirs:
+        if not target_dir.exists():
+            continue
+        for entry in target_dir.iterdir():
+            if not os.path.lexists(str(entry)):
+                continue
+            try:
+                raw = os.readlink(str(entry))
+                target = Path(raw) if Path(raw).is_absolute() else entry.parent / raw
+                real_target = target.resolve()
+            except OSError:
+                continue
+            # Check if the symlink resolves into this source's directory
+            try:
+                real_target.relative_to(source_root)
+                result.append(entry)
+            except ValueError:
+                pass
+    return result
+
+
+def remove_source_repo(source_path: str) -> OperationResult:
+    """Delete a cloned remote repo directory using shutil.rmtree."""
+    p = Path(source_path)
+    if not p.exists():
+        return OperationResult(success=True, message="Directory already absent.")
+    try:
+        shutil.rmtree(str(p))
+        return OperationResult(success=True)
+    except Exception as e:
+        return OperationResult(success=False, message=str(e))
