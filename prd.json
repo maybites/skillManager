@@ -251,7 +251,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": "Use shutil.rmtree() for remote repo cleanup. For each skill in source.skills, check each target's skills_dir for a symlink pointing into this source and unlink it."
     }
   ]

@@ -35,6 +35,21 @@ Started: Tue Mar 24 20:28:37 CET 2026
   - For lambdas in `on_click=` that capture a loop variable: always use `def fn(_e: Any, _p: Project = project) -> None:` + `.on("click", fn)` pattern to satisfy pyright
 ---
 
+## 2026-03-24 - US-014
+- Added `find_source_symlinks(source, target_dirs)` to `operations.py` — finds all symlinks across target dirs pointing into a source's root directory
+- Added `remove_source_repo(source_path)` to `operations.py` — deletes cloned repo dir with `shutil.rmtree`
+- Added 6 new tests covering both functions in `tests/test_operations.py`
+- Added `_refresh_sources_sidebar()` helper in `main.py` (mirrors `_refresh_projects_sidebar`)
+- Added `_confirm_remove_source(source)` in `main.py` — dialog lists active symlinks, deletes them on confirm, deletes remote repo dir, removes from config, refreshes sidebar, clears detail panel
+- Replaced stub "Remove" button in `_render_source_detail` with `on_remove_source_click` handler
+- Files changed: src/skillmanager/operations.py, src/skillmanager/main.py, tests/test_operations.py
+- **Learnings for future iterations:**
+  - `find_source_symlinks` resolves symlinks via `os.readlink` + `.resolve()` then uses `relative_to(source_root)` to check ownership — simpler than scanning Source.skills
+  - `shutil.rmtree` needs `str(p)` on older Python; wrapping in try/except Exception covers permission errors
+  - `_confirm_remove_source` must call `_all_target_dirs()` at dialog-open time to get a fresh list (personal dir + project skill dirs)
+  - Local sources: only de-register from config; never touch the folder on disk
+---
+
 ## Codebase Patterns
 - Typecheck: `uv run pyright src/` (pyright added as dev dep)
 - Entry point: `uv run skillmanager` maps to `skillmanager.main:run`
