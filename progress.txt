@@ -1,3 +1,16 @@
+## 2026-03-24 - US-009
+- Added `_render_matrix_view(panel)` to main.py: clears panel, shows empty state if no confirmed skills, renders header row + grouped skill rows with per-cell `os.path.exists` checkboxes
+- Added `open_matrix_view()` function that deselects sidebar item and renders matrix view
+- Added "Symlinks" button at top of left sidebar (before the expansion sections)
+- Auto-creates `~/.claude/skills/` personal dir on matrix view navigation
+- Files changed: src/skillmanager/main.py
+- **Learnings for future iterations:**
+  - Matrix uses `os.path.exists(str(symlink_path))` — returns False for broken symlinks (correct per spec), not `os.path.lexists`
+  - `_render_matrix_view` is called fresh on every navigation, so disk state is always current
+  - Column targets list: `list[tuple[str, Path]]` — Personal first, then projects in add-order
+  - Checkboxes in US-009 have no on_change handler (read-only state); US-010 will add the handlers
+---
+
 ## Codebase Patterns
 - `Project.skills_dir` is a `@property` returning `Path(self.path) / ".claude" / "skills"`
 - `add_project(path)` in `operations.py` validates path + auto-creates `.claude/skills/` dir; returns `OperationResult`

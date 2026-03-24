@@ -159,7 +159,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Symlink path: <target_skills_dir>/<skill.name>. Check with os.path.exists(symlink_path) — returns False for broken symlinks. Personal target is ~/.claude/skills/, auto-create if missing."
     },
     {
