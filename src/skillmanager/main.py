@@ -1,9 +1,13 @@
+import asyncio
+import uuid
+from pathlib import Path
 from typing import Any, Union
 
 from nicegui import app, ui
 
-from skillmanager.config import load_config
-from skillmanager.models import Project, Source
+from skillmanager.config import REPOS_DIR, load_config, save_config
+from skillmanager.models import Project, Source, SourceKind
+from skillmanager.operations import clone_repo, make_dest_path, validate_local_path
 
 ItemType = Union[Source, Project]
 
@@ -16,10 +20,42 @@ def run() -> None:
         config = load_config()
         selected_row: dict[str, ui.row | None] = {"ref": None}
         detail_ref: dict[str, ui.column | None] = {"panel": None}
+        sources_container_ref: dict[str, ui.column | None] = {"col": None}
 
         def _last_segment(val: str) -> str:
             seg = val.rstrip("/").rsplit("/", 1)[-1]
             return seg.removesuffix(".git") if seg else ""
+
+        def _make_source_row(source: Source) -> ui.row:
+            with sources_container_ref["col"]:  # type: ignore[arg-type]
+                r = ui.row().classes(
+                    "cursor-pointer w-full px-3 py-1 rounded items-center gap-2"
+                )
+                with r:
+                    ui.icon("folder_open").classes("text-sm text-gray-500")
+                    ui.label(source.display_name).classes("text-sm")
+                r.on("click", lambda _e, row=r, s=source: select_item(row, s))  # type: ignore[misc]
+            return r
+
+        def select_item(row: ui.row, item: ItemType) -> None:
+            prev = selected_row["ref"]
+            if prev is not None:
+                prev.classes(remove="bg-blue-100 font-semibold")
+            row.classes(add="bg-blue-100 font-semibold")
+            selected_row["ref"] = row
+
+            panel = detail_ref["panel"]
+            if panel is None:
+                return
+            panel.clear()
+            with panel:
+                if isinstance(item, Source):
+                    ui.label(item.display_name).classes("text-xl font-bold mb-2")
+                    ui.label(f"Kind: {item.kind.value}").classes("text-gray-600")
+                    ui.label(f"Path: {item.path}").classes("text-gray-600")
+                else:
+                    ui.label(item.display_name).classes("text-xl font-bold mb-2")
+                    ui.label(f"Path: {item.path}").classes("text-gray-600")
 
         def open_add_source_dialog() -> None:
             with ui.dialog() as dialog, ui.card().classes("w-96"):
@@ -49,10 +85,15 @@ def run() -> None:
                     placeholder="Optional — defaults to repo/folder name",
                 ).classes("w-full")
 
+                status_label = ui.label("").classes(
+                    "text-red-600 text-sm min-h-[1.25rem] w-full"
+                )
+
                 def on_mode_change(e: Any) -> None:
                     is_remote = e.value == "remote"
                     url_col.visible = is_remote
                     path_col.visible = not is_remote
+                    status_label.set_text("")
 
                 def on_url_change(e: Any) -> None:
                     seg = _last_segment(e.value or "")
@@ -68,49 +109,80 @@ def run() -> None:
                 url_input.on_value_change(on_url_change)  # type: ignore[misc]
                 path_input.on_value_change(on_path_change)  # type: ignore[misc]
 
+                async def on_add() -> None:
+                    mode = mode_toggle.value
+                    raw_url = url_input.value.strip()
+                    raw_path = path_input.value.strip()
+                    display = name_input.value.strip()
+                    status_label.set_text("")
+
+                    if mode == "remote":
+                        if not raw_url:
+                            status_label.set_text("Please enter a Git URL.")
+                            return
+                        if any(s.url == raw_url for s in config.sources):
+                            status_label.set_text("This URL is already registered.")
+                            return
+                        display = display or _last_segment(raw_url)
+                        dest = make_dest_path(raw_url, REPOS_DIR)
+                        status_label.set_text("Cloning… this may take a moment.")
+                        status_label.classes(remove="text-red-600")
+                        status_label.classes(add="text-blue-600")
+                        add_btn.disable()
+                        op = await asyncio.to_thread(clone_repo, raw_url, dest)
+                        if not op.success:
+                            status_label.classes(remove="text-blue-600")
+                            status_label.classes(add="text-red-600")
+                            status_label.set_text(op.message)
+                            add_btn.enable()
+                            return
+                        source: Source = Source(
+                            id=uuid.uuid4().hex,
+                            display_name=display,
+                            kind=SourceKind.REMOTE,
+                            path=str(dest),
+                            url=raw_url,
+                        )
+                    else:
+                        if not raw_path:
+                            status_label.set_text("Please enter a directory path.")
+                            return
+                        expanded = str(Path(raw_path).expanduser())
+                        if any(s.path == expanded for s in config.sources):
+                            status_label.set_text("This path is already registered.")
+                            return
+                        op = validate_local_path(raw_path)
+                        if not op.success:
+                            status_label.set_text(op.message)
+                            return
+                        display = display or _last_segment(raw_path)
+                        source = Source(
+                            id=uuid.uuid4().hex,
+                            display_name=display,
+                            kind=SourceKind.LOCAL,
+                            path=expanded,
+                        )
+
+                    config.sources.append(source)
+                    save_config(config)
+                    dialog.close()
+                    new_row = _make_source_row(source)
+                    select_item(new_row, source)
+
                 with ui.row().classes("w-full justify-end mt-4 gap-2"):
                     ui.button("Cancel", on_click=dialog.close).props("flat")
-                    ui.button(
-                        "Add",
-                        on_click=lambda: ui.notify(
-                            "Clone / path validation coming in US-005"
-                        ),
-                    ).props("color=primary")
+                    add_btn = ui.button("Add", on_click=on_add).props("color=primary")
 
             dialog.open()
-
-        def select_item(row: ui.row, item: ItemType) -> None:
-            prev = selected_row["ref"]
-            if prev is not None:
-                prev.classes(remove="bg-blue-100 font-semibold")
-            row.classes(add="bg-blue-100 font-semibold")
-            selected_row["ref"] = row
-
-            panel = detail_ref["panel"]
-            if panel is None:
-                return
-            panel.clear()
-            with panel:
-                if isinstance(item, Source):
-                    ui.label(item.display_name).classes("text-xl font-bold mb-2")
-                    ui.label(f"Kind: {item.kind.value}").classes("text-gray-600")
-                    ui.label(f"Path: {item.path}").classes("text-gray-600")
-                else:
-                    ui.label(item.display_name).classes("text-xl font-bold mb-2")
-                    ui.label(f"Path: {item.path}").classes("text-gray-600")
 
         with ui.splitter(value=20).classes("w-full h-screen") as splitter:
             with splitter.before:
                 with ui.column().classes("w-full p-2 gap-0"):
                     with ui.expansion("Skill Sources", icon="folder").classes("w-full"):
+                        sources_container = ui.column().classes("w-full gap-0")
+                        sources_container_ref["col"] = sources_container
                         for source in config.sources:
-                            r = ui.row().classes(
-                                "cursor-pointer w-full px-3 py-1 rounded items-center gap-2"
-                            )
-                            with r:
-                                ui.icon("folder_open").classes("text-sm text-gray-500")
-                                ui.label(source.display_name).classes("text-sm")
-                            r.on("click", lambda _e, row=r, s=source: select_item(row, s))  # type: ignore[misc]
+                            _make_source_row(source)
                         ui.button(
                             "+ Add",
                             on_click=open_add_source_dialog,
