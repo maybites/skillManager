@@ -124,7 +124,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Project.skills_dir property returns path / '.claude' / 'skills'. Create it with Path.mkdir(parents=True, exist_ok=True)."
     },
     {

@@ -1,4 +1,7 @@
 ## Codebase Patterns
+- `Project.skills_dir` is a `@property` returning `Path(self.path) / ".claude" / "skills"`
+- `add_project(path)` in `operations.py` validates path + auto-creates `.claude/skills/` dir; returns `OperationResult`
+- Container ref pattern: `{name}_container_ref: dict[str, ui.column | None]` initialized to `{"col": None}`, then assigned in layout; use `# type: ignore[arg-type,union-attr]` on the `with` statement
 - `detect_skills(path)` returns `list[tuple[str, bool]]` — rel_path and enabled_by_default; folders in `_UNCHECKED_BY_DEFAULT` frozenset default to False
 - `_render_source_detail(panel, source)` pattern: function takes the panel and calls `panel.clear()` internally, allowing it to re-render in-place (used for confirm callback too)
 - When calling a render function that manages its own `panel.clear() + with panel:`, do NOT wrap the call in another `with panel:` from the caller
@@ -6,6 +9,18 @@
 - TOML serialization via `tomllib` (stdlib, read) + `tomli-w` (write); convert dataclasses to plain dicts first
 - Enum values stored as strings in TOML (e.g. `kind = "remote"`)
 
+---
+
+## 2026-03-24 - US-007
+- Added `Project.skills_dir` property to `models.py` (returns `Path(path) / ".claude" / "skills"`)
+- Added `add_project(path)` to `operations.py`: validates path exists + is dir, auto-creates `.claude/skills/` with `mkdir(parents=True, exist_ok=True)`
+- Added 4 tests for `add_project` in `tests/test_operations.py`
+- Updated `main.py`: added `projects_container_ref`, `_make_project_row()`, `_render_project_detail()`, `open_add_project_dialog()`, wired "+ Add" button in Projects sidebar
+- Files changed: src/skillmanager/models.py, src/skillmanager/operations.py, src/skillmanager/main.py, tests/test_operations.py
+- **Learnings for future iterations:**
+  - `@property` works fine on dataclasses — just import the type at module level
+  - The `# type: ignore[arg-type]` on container ref `with` statements also needs `union-attr` to suppress all mypy noise
+  - Duplicate detection for projects uses `p.path == expanded` (compare expanded paths)
 ---
 
 ## 2026-03-24 - US-002
