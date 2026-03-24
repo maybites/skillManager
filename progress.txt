@@ -1,3 +1,17 @@
+## 2026-03-24 - US-012
+- Added `find_owning_source(link_path, sources)` to `operations.py`: resolves symlink target and matches against confirmed source skill paths; returns owning Source or None
+- Added `_show_conflict_dialog(...)` to `main.py`: shows amber-titled dialog naming both sources, two buttons to choose winner; removes old symlink, creates new, persists `ConflictResolution` entry in config
+- Updated `_render_matrix_view` to detect conflicting skill names (same name across multiple sources) and show amber warning icon with tooltip on affected rows
+- Updated `_on_toggle` handler: when checking a cell, calls `find_owning_source`; if existing symlink is from a different source, reverts checkbox and opens conflict dialog
+- Added 5 unit tests for `find_owning_source` in `tests/test_operations.py`
+- Files changed: src/skillmanager/operations.py, src/skillmanager/main.py, tests/test_operations.py
+- **Learnings for future iterations:**
+  - `find_owning_source` uses `TYPE_CHECKING` guard to import `Source` for type annotations without runtime circular import risk
+  - Conflict indicator is computed from all confirmed sources before rendering — build a `set[str]` of names with count > 1
+  - When conflict dialog is cancelled ("Keep existing"), just call `cb.set_value(False)` — no symlink ops needed since we reverted the checkbox before opening the dialog
+  - `ConflictResolution.target_id` stores `str(dst.parent)` (the target skills dir path), not a project id
+---
+
 ## 2026-03-24 - US-009
 - Added `_render_matrix_view(panel)` to main.py: clears panel, shows empty state if no confirmed skills, renders header row + grouped skill rows with per-cell `os.path.exists` checkboxes
 - Added `open_matrix_view()` function that deselects sidebar item and renders matrix view

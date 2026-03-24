@@ -214,7 +214,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "Conflict = two Skill objects with same .name across different Sources. Check at checkbox-click time by scanning target dir for existing symlink pointing to a different source."
     },
     {
