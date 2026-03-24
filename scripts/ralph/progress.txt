@@ -17,6 +17,24 @@ Started: Tue Mar 24 20:28:37 CET 2026
   - For inline output area in detail panels: create `ui.label` with `visible = False`, show it during async operation — avoids re-rendering the entire panel
 ---
 
+## 2026-03-24 - US-013
+- Added `validate_project_paths(projects)` to `operations.py` returning set of project IDs whose paths don't exist
+- Added 4 tests for `validate_project_paths` in `tests/test_operations.py`
+- Added `missing_project_ids: dict[str, set[str]]` state in `index()`, populated at startup
+- Modified `_make_project_row` to show amber `warning` icon for missing projects
+- Added `_refresh_projects_sidebar()` helper that clears container and re-adds all project rows
+- Added `_confirm_remove_project(project)` — shows confirmation dialog, removes from config, refreshes sidebar, clears detail panel
+- Added `_open_update_path_dialog(project)` — path input dialog, validates new path, updates config and missing set, refreshes sidebar + re-renders detail
+- Modified `_render_project_detail` to branch on missing path: shows warning banner, missing path in red, "Update Path" and "Remove Project" buttons; normal path shows full detail with wired "Remove Project" button
+- Modified `_render_matrix_view` targets tuple from `(str, Path)` to `(str, Path, bool)` to track missing projects; greyed-out disabled checkbox + tooltip for missing project columns; grey header label + tooltip
+- Files changed: src/skillmanager/operations.py, src/skillmanager/main.py, tests/test_operations.py
+- **Learnings for future iterations:**
+  - Tuple type changes in list comprehensions require updating all tuple-unpacking loop sites
+  - `config.projects[:] = [...]` mutates in-place (avoids rebinding issues in closures), vs `config.projects = [...]` which rebinds the list
+  - `col.clear()` removes all NiceGUI children; `with col:` then re-appends new children — works as a full sidebar refresh
+  - For lambdas in `on_click=` that capture a loop variable: always use `def fn(_e: Any, _p: Project = project) -> None:` + `.on("click", fn)` pattern to satisfy pyright
+---
+
 ## Codebase Patterns
 - Typecheck: `uv run pyright src/` (pyright added as dev dep)
 - Entry point: `uv run skillmanager` maps to `skillmanager.main:run`

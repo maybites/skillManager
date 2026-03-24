@@ -232,7 +232,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "Validate on startup in main.py before rendering. Store validation result in runtime state (not persisted). Re-validate when user updates the path."
     },
     {
