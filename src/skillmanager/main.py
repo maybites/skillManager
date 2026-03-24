@@ -56,19 +56,81 @@ def run() -> None:
                 r.on("click", lambda _e, row=r, p=project: select_item(row, p))  # type: ignore[misc]
             return r
 
+        def _symlink_count(project: Project) -> int:
+            sd = project.skills_dir
+            if not sd.exists():
+                return 0
+            return sum(1 for p in sd.iterdir() if p.is_symlink())
+
         def _render_project_detail(panel: ui.column, project: Project) -> None:
             panel.clear()
             with panel:
-                ui.label(project.display_name).classes("text-xl font-bold mb-2")
+                # Header row: title + Edit Name button
+                name_row = ui.row().classes("items-center gap-2 mb-2 w-full")
+                with name_row:
+                    name_label = ui.label(project.display_name).classes(
+                        "text-xl font-bold"
+                    )
+                    edit_btn = ui.button(icon="edit").props("flat round dense size=sm")
+
+                edit_row = ui.row().classes("items-center gap-2 mb-2 w-full")
+                edit_row.visible = False
+                with edit_row:
+                    name_edit = ui.input(value=project.display_name).classes(
+                        "text-xl font-bold"
+                    )
+
+                    def on_save_name() -> None:
+                        new_name = name_edit.value.strip()
+                        if new_name:
+                            project.display_name = new_name
+                            save_config(config)
+                            name_label.set_text(new_name)
+                        edit_row.visible = False
+                        name_row.visible = True
+
+                    ui.button("Save", on_click=on_save_name).props(
+                        "color=primary dense"
+                    )
+                    def on_cancel_name() -> None:
+                        edit_row.visible = False
+                        name_row.visible = True
+
+                    ui.button("Cancel", on_click=on_cancel_name).props("flat dense")
+
+                def on_edit_name() -> None:
+                    name_edit.set_value(project.display_name)
+                    name_row.visible = False
+                    edit_row.visible = True
+
+                edit_btn.on("click", lambda _e: on_edit_name())  # type: ignore[misc]
+
                 ui.label(f"Path: {project.path}").classes("text-gray-600")
                 ui.label(f"Skills dir: {project.skills_dir}").classes("text-gray-600")
+
+                count = _symlink_count(project)
+                ui.label(f"Active symlinks: {count}").classes("text-gray-600 mb-4")
+
+                with ui.row().classes("gap-2 mt-2"):
+                    ui.button(
+                        "Remove Project",
+                        icon="delete",
+                        on_click=lambda: ui.notify("Coming soon"),
+                    ).props("color=negative flat")
 
         def _render_source_detail(panel: ui.column, source: Source) -> None:
             panel.clear()
             with panel:
                 ui.label(source.display_name).classes("text-xl font-bold mb-2")
-                ui.label(f"Kind: {source.kind.value}").classes("text-gray-600")
-                ui.label(f"Path: {source.path}").classes("text-gray-600 mb-4")
+                kind_label = "Remote" if source.kind == SourceKind.REMOTE else "Local"
+                ui.label(f"Kind: {kind_label}").classes("text-gray-600")
+                if source.kind == SourceKind.REMOTE and source.url:
+                    ui.label(f"URL: {source.url}").classes("text-gray-600")
+                ui.label(f"Path: {source.path}").classes("text-gray-600")
+                updated_text = source.last_updated if source.last_updated else "Never"
+                ui.label(f"Last updated: {updated_text}").classes(
+                    "text-gray-600 mb-4"
+                )
 
                 if not source.confirmed:
                     ui.label("Confirm skills to enable symlinking").classes(
@@ -113,6 +175,26 @@ def run() -> None:
                         ui.label("No skills confirmed.").classes(
                             "text-gray-500 italic"
                         )
+
+                with ui.row().classes("gap-2 mt-4"):
+                    if source.kind == SourceKind.REMOTE:
+                        ui.button(
+                            "Update",
+                            icon="refresh",
+                            on_click=lambda: ui.notify("Coming soon"),
+                        ).props("color=primary flat")
+                    else:
+                        update_btn = ui.button(
+                            "Update",
+                            icon="refresh",
+                        ).props("flat")
+                        update_btn.disable()
+                        update_btn.tooltip("Update is only available for remote sources")
+                    ui.button(
+                        "Remove",
+                        icon="delete",
+                        on_click=lambda: ui.notify("Coming soon"),
+                    ).props("color=negative flat")
 
         def select_item(row: ui.row, item: ItemType) -> None:
             prev = selected_row["ref"]
