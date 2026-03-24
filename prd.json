@@ -141,7 +141,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Keep handlers as stubs (ui.notify('Coming soon')) for Update, Remove, Edit. Full logic in US-011, US-013, US-014."
     },
     {

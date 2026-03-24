@@ -11,6 +11,17 @@
 
 ---
 
+## 2026-03-24 - US-008
+- Enhanced `_render_source_detail`: now shows Kind (Remote/Local), URL (if remote), last-updated timestamp, disabled Update button for local sources (with tooltip), stub Remove button
+- Enhanced `_render_project_detail`: now shows symlink count, inline Edit Name (show/hide input row), stub Remove Project button
+- Added `_symlink_count(project)` helper that counts symlinks in `project.skills_dir`
+- Files changed: src/skillmanager/main.py
+- **Learnings for future iterations:**
+  - Inline edit pattern: create two rows (display row + edit row), toggle `.visible` between them; define save/cancel as named `def` functions to avoid mypy issues with lambdas
+  - `edit_btn.on("click", lambda _e: on_edit_name())` — NiceGUI button `.on()` passes an event arg, so the lambda must accept it (use `_e`)
+  - `_symlink_count` uses `p.is_symlink()` not `p.exists()` — counts the link itself, not the target
+---
+
 ## 2026-03-24 - US-007
 - Added `Project.skills_dir` property to `models.py` (returns `Path(path) / ".claude" / "skills"`)
 - Added `add_project(path)` to `operations.py`: validates path exists + is dir, auto-creates `.claude/skills/` with `mkdir(parents=True, exist_ok=True)`
