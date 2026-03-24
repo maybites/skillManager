@@ -18,6 +18,18 @@ Started: Tue Mar 24 20:28:37 CET 2026
 - NiceGUI dynamic sidebar rows: keep `dict[str, ui.column | None]` ref to a container; use `with container:` at any time to append new rows; elements added outside initial `with` block still render correctly
 - git clone via subprocess: `subprocess.run(["git", "clone", url, str(dest)], capture_output=True, text=True)` — check `returncode == 0`; stderr has the error message on failure
 
+## 2026-03-24 - US-010
+- Added `create_symlink(src, dst)` and `remove_symlink(dst)` to `operations.py`
+- Wired checkbox `on_value_change` handlers in `_render_matrix_view` in `main.py`; each cell now creates/removes the symlink on toggle and reverts + toasts on error
+- Added 5 new tests in `tests/test_operations.py` covering create/remove success and failure paths
+- Files changed: src/skillmanager/operations.py, src/skillmanager/main.py, tests/test_operations.py
+- **Learnings for future iterations:**
+  - Default arg capture in nested `def` inside a loop: `def fn(e, _cb=cb, _src=src, _dst=dst)` is the right pattern to freeze loop vars (same as lambda capture but more readable for multi-line)
+  - `cb.on_value_change(handler)` with `# type: ignore[misc]` for pyright; handler receives event with `.value` bool
+  - `ui.notify(msg, type="negative")` shows red error toast; `cb.set_value(not e.value)` reverts the checkbox
+  - `os.symlink(src, dst)` raises `OSError` (e.g. `FileExistsError`) when dst already exists — caught and returned as OperationResult failure
+---
+
 ## 2026-03-24 - US-005
 - Created `src/skillmanager/operations.py` with `clone_repo`, `validate_local_path`, `make_slug`, `make_dest_path`
 - Created `tests/test_operations.py` with 15 tests covering all operation functions

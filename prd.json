@@ -177,7 +177,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Use os.symlink(src, dst) for create. src is absolute path to skill folder. dst is absolute path in target skills dir. Catch OSError for error toasts."
     },
     {
