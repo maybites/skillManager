@@ -35,7 +35,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Use Python 3.11 stdlib tomllib for reading. tomli-w is already in dependencies for writing."
     },
     {
