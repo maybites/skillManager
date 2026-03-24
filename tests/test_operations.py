@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -7,9 +8,11 @@ from skillmanager.operations import (
     OperationResult,
     add_project,
     clone_repo,
+    create_symlink,
     detect_skills,
     make_dest_path,
     make_slug,
+    remove_symlink,
     validate_local_path,
 )
 
@@ -210,3 +213,53 @@ def test_detect_skills_only_direct_children(tmp_path):
     names = [r[0] for r in results]
     assert "skill-a" in names
     assert "child" not in names
+
+
+# --- create_symlink tests ---
+
+def test_create_symlink_creates_link(tmp_path):
+    src = tmp_path / "skill-dir"
+    src.mkdir()
+    dst = tmp_path / "target" / "skills" / "skill-dir"
+    result = create_symlink(src, dst)
+    assert result.success is True
+    assert dst.is_symlink()
+    assert os.path.realpath(dst) == os.path.realpath(src)
+
+
+def test_create_symlink_auto_creates_parent(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    dst = tmp_path / "a" / "b" / "c" / "skill"
+    result = create_symlink(src, dst)
+    assert result.success is True
+    assert dst.is_symlink()
+
+
+def test_create_symlink_fails_if_dst_exists(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    dst = tmp_path / "dst"
+    dst.mkdir()  # already exists as a directory
+    result = create_symlink(src, dst)
+    assert result.success is False
+    assert result.message != ""
+
+
+# --- remove_symlink tests ---
+
+def test_remove_symlink_removes_link(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    dst = tmp_path / "link"
+    os.symlink(src, dst)
+    result = remove_symlink(dst)
+    assert result.success is True
+    assert not dst.exists()
+
+
+def test_remove_symlink_fails_if_missing(tmp_path):
+    dst = tmp_path / "nonexistent"
+    result = remove_symlink(dst)
+    assert result.success is False
+    assert result.message != ""

@@ -1,3 +1,4 @@
+import os
 import subprocess
 import uuid
 from dataclasses import dataclass
@@ -82,3 +83,22 @@ def validate_local_path(path: str) -> OperationResult:
     if not p.is_dir():
         return OperationResult(success=False, message=f"Path is not a directory: {p}")
     return OperationResult(success=True)
+
+
+def create_symlink(src: Path, dst: Path) -> OperationResult:
+    """Create symlink dst -> src, auto-creating dst.parent if missing."""
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(src, dst)
+        return OperationResult(success=True)
+    except OSError as e:
+        return OperationResult(success=False, message=str(e))
+
+
+def remove_symlink(dst: Path) -> OperationResult:
+    """Remove a symlink at dst."""
+    try:
+        os.unlink(dst)
+        return OperationResult(success=True)
+    except OSError as e:
+        return OperationResult(success=False, message=str(e))

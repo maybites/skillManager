@@ -12,8 +12,10 @@ from skillmanager.models import Skill
 from skillmanager.operations import (
     add_project,
     clone_repo,
+    create_symlink,
     detect_skills,
     make_dest_path,
+    remove_symlink,
     validate_local_path,
 )
 
@@ -245,12 +247,29 @@ def run() -> None:
                             ).style("min-width: 200px")
                             for _, target_dir in targets:
                                 symlink_path = target_dir / skill.name
+                                src_path = Path(source.path) / skill.rel_path
                                 exists = os.path.exists(str(symlink_path))
                                 with ui.element("div").style(
                                     "min-width: 120px; "
                                     "display: flex; justify-content: center"
                                 ):
-                                    ui.checkbox(value=exists)
+                                    cb = ui.checkbox(value=exists)
+
+                                    def _on_toggle(
+                                        e: Any,
+                                        _cb: ui.checkbox = cb,
+                                        _src: Path = src_path,
+                                        _dst: Path = symlink_path,
+                                    ) -> None:
+                                        if e.value:
+                                            op = create_symlink(_src, _dst)
+                                        else:
+                                            op = remove_symlink(_dst)
+                                        if not op.success:
+                                            ui.notify(op.message, type="negative")
+                                            _cb.set_value(not e.value)
+
+                                    cb.on_value_change(_on_toggle)  # type: ignore[misc]
 
         def open_matrix_view() -> None:
             prev = selected_row["ref"]
