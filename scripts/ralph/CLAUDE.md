@@ -70,6 +70,16 @@ Before committing, check if any edited files have learnings worth preserving in 
 
 Only update CLAUDE.md if you have **genuinely reusable knowledge** that would help future work in that directory.
 
+## Development Approach
+
+Follow test-driven development for all non-UI logic:
+1. Write a failing test for the acceptance criteria first
+2. Implement the minimum code to make it pass
+3. Refactor if needed
+4. Confirm all tests pass before committing
+
+For UI stories (any story with "Verify in browser" in acceptance criteria), write tests for the underlying logic (e.g. symlink operations, config persistence, git commands) and verify the UI manually via browser tools.
+
 ## Quality Requirements
 
 - ALL commits must pass your project's quality checks (typecheck, lint, test)

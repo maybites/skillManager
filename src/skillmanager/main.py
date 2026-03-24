@@ -665,68 +665,144 @@ def run() -> None:
                         if is_missing:
                             lbl.tooltip("Project path not found")
 
-                # Rows grouped by source
+                # Rows grouped by source (collapsible)
                 for source in confirmed:
-                    ui.label(source.display_name).classes(
-                        "font-bold text-sm text-gray-700 "
-                        "bg-gray-100 px-2 py-1 rounded mt-3 w-full"
-                    )
+                    linked_count = 0
                     for skill in source.skills:
-                        with ui.row().classes("items-center hover:bg-gray-50 rounded"):
-                            with ui.row().classes("items-center gap-1").style(
-                                "min-width: 200px"
+                        for _, target_dir, is_missing in targets:
+                            if not is_missing and os.path.exists(
+                                str(target_dir / skill.name)
                             ):
-                                ui.label(skill.name).classes("text-sm text-gray-600")
-                                if skill.name in conflicting_names:
-                                    ui.icon("warning").classes(
-                                        "text-amber-500 text-sm"
-                                    ).tooltip(
-                                        "Conflict: another source has a skill with the same name"
-                                    )
-                            for _, target_dir, is_missing in targets:
-                                symlink_path = target_dir / skill.name
-                                src_path = Path(source.path) / skill.rel_path
-                                exists = os.path.exists(str(symlink_path))
-                                with ui.element("div").style(
-                                    "min-width: 120px; "
-                                    "display: flex; justify-content: center"
-                                ):
-                                    cb = ui.checkbox(value=exists)
-                                    if is_missing:
-                                        cb.disable()
-                                        cb.tooltip("Project path not found")
-                                    else:
-                                        def _on_toggle(
-                                            e: Any,
-                                            _cb: ui.checkbox = cb,
-                                            _src: Path = src_path,
-                                            _dst: Path = symlink_path,
-                                            _source: Source = source,
-                                            _skill: Skill = skill,
-                                        ) -> None:
-                                            if e.value:
-                                                existing = find_owning_source(
-                                                    _dst, config.sources
-                                                )
-                                                if existing and existing.id != _source.id:  # type: ignore[union-attr]
-                                                    _cb.set_value(False)
-                                                    _show_conflict_dialog(
-                                                        _skill,
-                                                        _source,
-                                                        existing,  # type: ignore[arg-type]
-                                                        _dst,
-                                                        _src,
-                                                        _cb,
-                                                    )
-                                                    return
-                                                op = create_symlink(_src, _dst)
-                                            else:
-                                                op = remove_symlink(_dst)
-                                            if not op.success:
-                                                ui.notify(op.message, type="negative")
-                                                _cb.set_value(not e.value)
+                                linked_count += 1
+                                break
+                    total_count = len(source.skills)
 
-                                        cb.on_value_change(_on_toggle)  # type: ignore[misc]
+                    with ui.row().classes(
+                        "items-center bg-gray-100 px-2 py-1 rounded mt-3 "
+                        "w-full cursor-pointer select-none gap-1"
+                    ) as header_row:
+                        chevron = ui.icon("chevron_right").classes(
+                            "text-gray-500 text-sm"
+                        ).style("transition: transform 0.2s ease-in-out")
+                        ui.label(
+                            f"{source.display_name} "
+                            f"({linked_count}/{total_count} linked)"
+                        ).classes("font-bold text-sm text-gray-700")
+
+                    skills_container = ui.column().classes("w-full gap-0").style(
+                        "overflow: hidden; max-height: 0; "
+                        "transition: max-height 0.2s ease-in-out"
+                    )
+
+                    def _make_toggle(
+                        _header: ui.row,
+                        _chevron: ui.icon,
+                        _container: ui.column,
+                        _num_skills: int,
+                    ) -> None:
+                        _header._expanded = False  # type: ignore[attr-defined]
+
+                        def _on_click() -> None:
+                            _header._expanded = not _header._expanded  # type: ignore[attr-defined]
+                            if _header._expanded:  # type: ignore[attr-defined]
+                                expanded_height = _num_skills * 40 + 20
+                                _container.style(
+                                    replace=(
+                                        "overflow: hidden; "
+                                        f"max-height: {expanded_height}px; "
+                                        "transition: max-height 0.2s ease-in-out"
+                                    )
+                                )
+                                _chevron.style(
+                                    replace=(
+                                        "transform: rotate(90deg); "
+                                        "transition: transform 0.2s ease-in-out"
+                                    )
+                                )
+                            else:
+                                _container.style(
+                                    replace=(
+                                        "overflow: hidden; "
+                                        "max-height: 0; "
+                                        "transition: max-height 0.2s ease-in-out"
+                                    )
+                                )
+                                _chevron.style(
+                                    replace=(
+                                        "transform: rotate(0deg); "
+                                        "transition: transform 0.2s ease-in-out"
+                                    )
+                                )
+
+                        _header.on("click", _on_click)
+
+                    _make_toggle(header_row, chevron, skills_container, total_count)
+
+                    with skills_container:
+                        for skill in source.skills:
+                            with ui.row().classes(
+                                "items-center hover:bg-gray-50 rounded"
+                            ):
+                                with ui.row().classes("items-center gap-1").style(
+                                    "min-width: 200px"
+                                ):
+                                    ui.label(skill.name).classes(
+                                        "text-sm text-gray-600"
+                                    )
+                                    if skill.name in conflicting_names:
+                                        ui.icon("warning").classes(
+                                            "text-amber-500 text-sm"
+                                        ).tooltip(
+                                            "Conflict: another source has a skill "
+                                            "with the same name"
+                                        )
+                                for _, target_dir, is_missing in targets:
+                                    symlink_path = target_dir / skill.name
+                                    src_path = Path(source.path) / skill.rel_path
+                                    exists = os.path.exists(str(symlink_path))
+                                    with ui.element("div").style(
+                                        "min-width: 120px; "
+                                        "display: flex; justify-content: center"
+                                    ):
+                                        cb = ui.checkbox(value=exists)
+                                        if is_missing:
+                                            cb.disable()
+                                            cb.tooltip("Project path not found")
+                                        else:
+
+                                            def _on_toggle(
+                                                e: Any,
+                                                _cb: ui.checkbox = cb,
+                                                _src: Path = src_path,
+                                                _dst: Path = symlink_path,
+                                                _source: Source = source,
+                                                _skill: Skill = skill,
+                                            ) -> None:
+                                                if e.value:
+                                                    existing = find_owning_source(
+                                                        _dst, config.sources
+                                                    )
+                                                    if existing and existing.id != _source.id:  # type: ignore[union-attr]
+                                                        _cb.set_value(False)
+                                                        _show_conflict_dialog(
+                                                            _skill,
+                                                            _source,
+                                                            existing,  # type: ignore[arg-type]
+                                                            _dst,
+                                                            _src,
+                                                            _cb,
+                                                        )
+                                                        return
+                                                    op = create_symlink(_src, _dst)
+                                                else:
+                                                    op = remove_symlink(_dst)
+                                                if not op.success:
+                                                    ui.notify(
+                                                        op.message, type="negative"
+                                                    )
+                                                    _cb.set_value(not e.value)
+
+                                            cb.on_value_change(_on_toggle)  # type: ignore[misc]
 
         def open_matrix_view() -> None:
             prev = selected_row["ref"]
