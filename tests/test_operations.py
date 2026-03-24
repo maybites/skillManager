@@ -10,9 +10,11 @@ from skillmanager.operations import (
     clone_repo,
     create_symlink,
     detect_skills,
+    git_pull,
     make_dest_path,
     make_slug,
     remove_symlink,
+    scan_broken_symlinks,
     validate_local_path,
 )
 
@@ -263,3 +265,104 @@ def test_remove_symlink_fails_if_missing(tmp_path):
     result = remove_symlink(dst)
     assert result.success is False
     assert result.message != ""
+
+
+# --- git_pull tests ---
+
+
+def test_git_pull_success(tmp_path):
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    mock_result.stdout = "Already up to date.\n"
+    mock_result.stderr = ""
+    with patch("subprocess.run", return_value=mock_result) as mock_run:
+        result = git_pull(tmp_path)
+    assert result.success is True
+    assert "up to date" in result.message
+    mock_run.assert_called_once_with(
+        ["git", "pull"],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_git_pull_failure(tmp_path):
+    mock_result = MagicMock()
+    mock_result.returncode = 1
+    mock_result.stdout = ""
+    mock_result.stderr = "error: failed to merge"
+    with patch("subprocess.run", return_value=mock_result):
+        result = git_pull(tmp_path)
+    assert result.success is False
+    assert "failed to merge" in result.message
+
+
+def test_git_pull_git_not_found(tmp_path):
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        result = git_pull(tmp_path)
+    assert result.success is False
+    assert "git not found" in result.message
+
+
+def test_git_pull_unexpected_error(tmp_path):
+    with patch("subprocess.run", side_effect=PermissionError("denied")):
+        result = git_pull(tmp_path)
+    assert result.success is False
+    assert "denied" in result.message
+
+
+# --- scan_broken_symlinks tests ---
+
+
+def test_scan_broken_symlinks_finds_broken(tmp_path):
+    target_dir = tmp_path / "skills"
+    target_dir.mkdir()
+    nonexistent = tmp_path / "nonexistent-target"
+    link = target_dir / "broken-link"
+    os.symlink(nonexistent, link)
+    assert os.path.lexists(str(link))
+    assert not os.path.exists(str(link))
+
+    broken = scan_broken_symlinks([target_dir])
+    assert link in broken
+
+
+def test_scan_broken_symlinks_ignores_valid(tmp_path):
+    target_dir = tmp_path / "skills"
+    target_dir.mkdir()
+    src = tmp_path / "real-skill"
+    src.mkdir()
+    link = target_dir / "good-link"
+    os.symlink(src, link)
+
+    broken = scan_broken_symlinks([target_dir])
+    assert link not in broken
+
+
+def test_scan_broken_symlinks_ignores_missing_dir(tmp_path):
+    nonexistent_dir = tmp_path / "nonexistent-dir"
+    broken = scan_broken_symlinks([nonexistent_dir])
+    assert broken == []
+
+
+def test_scan_broken_symlinks_multiple_dirs(tmp_path):
+    dir_a = tmp_path / "dir_a"
+    dir_a.mkdir()
+    dir_b = tmp_path / "dir_b"
+    dir_b.mkdir()
+
+    # broken link in dir_a
+    bad_target = tmp_path / "gone"
+    bad_link = dir_a / "bad"
+    os.symlink(bad_target, bad_link)
+
+    # good link in dir_b
+    good_src = tmp_path / "real"
+    good_src.mkdir()
+    good_link = dir_b / "good"
+    os.symlink(good_src, good_link)
+
+    broken = scan_broken_symlinks([dir_a, dir_b])
+    assert bad_link in broken
+    assert good_link not in broken

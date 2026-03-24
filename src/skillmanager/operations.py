@@ -102,3 +102,35 @@ def remove_symlink(dst: Path) -> OperationResult:
         return OperationResult(success=True)
     except OSError as e:
         return OperationResult(success=False, message=str(e))
+
+
+def git_pull(repo_path: Path) -> OperationResult:
+    """Run git pull in repo_path. Returns combined stdout+stderr as message."""
+    try:
+        result = subprocess.run(
+            ["git", "pull"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+        )
+        output = (result.stdout + result.stderr).strip()
+        if result.returncode == 0:
+            return OperationResult(success=True, message=output or "Already up to date.")
+        return OperationResult(success=False, message=output or "git pull failed.")
+    except FileNotFoundError:
+        return OperationResult(success=False, message="git not found in PATH.")
+    except Exception as e:
+        return OperationResult(success=False, message=str(e))
+
+
+def scan_broken_symlinks(target_dirs: list[Path]) -> list[Path]:
+    """Return paths of broken symlinks in target_dirs.
+    Broken = os.path.lexists(p) is True AND os.path.exists(p) is False."""
+    broken: list[Path] = []
+    for target_dir in target_dirs:
+        if not target_dir.exists():
+            continue
+        for entry in target_dir.iterdir():
+            if os.path.lexists(str(entry)) and not os.path.exists(str(entry)):
+                broken.append(entry)
+    return broken

@@ -1,6 +1,7 @@
 import asyncio
 import os
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Union
 
@@ -14,8 +15,10 @@ from skillmanager.operations import (
     clone_repo,
     create_symlink,
     detect_skills,
+    git_pull,
     make_dest_path,
     remove_symlink,
+    scan_broken_symlinks,
     validate_local_path,
 )
 
@@ -121,6 +124,111 @@ def run() -> None:
                         on_click=lambda: ui.notify("Coming soon"),
                     ).props("color=negative flat")
 
+        def _all_target_dirs() -> list[Path]:
+            personal_dir = Path.home() / ".claude" / "skills"
+            return [personal_dir] + [p.skills_dir for p in config.projects]
+
+        def _open_remap_dialog(link_path: Path, parent_dialog: ui.dialog) -> None:
+            confirmed_skills = [
+                (src, sk)
+                for src in config.sources
+                if src.confirmed
+                for sk in src.skills
+            ]
+            with ui.dialog() as remap_dialog, ui.card().classes("w-96"):
+                ui.label(f"Re-map: {link_path.name}").classes(
+                    "text-xl font-bold mb-4"
+                )
+                ui.label("Choose a skill to link to this target:").classes(
+                    "text-gray-600 mb-3"
+                )
+                if not confirmed_skills:
+                    ui.label("No confirmed skills available.").classes(
+                        "text-gray-500 italic"
+                    )
+                    with ui.row().classes("justify-end mt-4"):
+                        ui.button("Close", on_click=remap_dialog.close).props("flat")
+                else:
+                    skill_options = {
+                        f"{src.display_name} / {sk.name}": (src, sk)
+                        for src, sk in confirmed_skills
+                    }
+                    default_key = list(skill_options.keys())[0]
+                    skill_select = ui.select(
+                        list(skill_options.keys()), value=default_key
+                    ).classes("w-full")
+
+                    def on_remap() -> None:
+                        key = skill_select.value
+                        if not key or key not in skill_options:
+                            return
+                        src, sk = skill_options[key]
+                        new_src = Path(src.path) / sk.rel_path
+                        if os.path.lexists(str(link_path)):
+                            os.unlink(str(link_path))
+                        op = create_symlink(new_src, link_path)
+                        if op.success:
+                            ui.notify(f"Re-mapped to {sk.name}", type="positive")
+                            remap_dialog.close()
+                            parent_dialog.close()
+                        else:
+                            ui.notify(f"Re-map failed: {op.message}", type="negative")
+
+                    with ui.row().classes("w-full justify-end mt-4 gap-2"):
+                        ui.button("Cancel", on_click=remap_dialog.close).props("flat")
+                        ui.button("Re-map", on_click=on_remap).props("color=primary")
+            remap_dialog.open()
+
+        def _show_broken_symlinks_dialog(broken: list[Path]) -> None:
+            with ui.dialog() as dialog, ui.card().classes("w-[520px]"):
+                ui.label("Broken Symlinks Detected").classes(
+                    "text-xl font-bold mb-2 text-amber-700"
+                )
+                ui.label(
+                    "These symlinks point to targets that no longer exist:"
+                ).classes("text-gray-600 mb-4")
+
+                rows: dict[str, ui.row] = {}
+                for link_path in broken:
+                    with ui.row().classes(
+                        "items-center gap-2 w-full border-b border-gray-200 py-2"
+                    ) as row:
+                        rows[str(link_path)] = row
+                        ui.icon("warning").classes("text-amber-500 shrink-0")
+                        ui.label(str(link_path)).classes(
+                            "text-sm font-mono flex-1 break-all"
+                        )
+
+                        def on_remove(
+                            _p: Path = link_path, _r: ui.row = row
+                        ) -> None:
+                            op = remove_symlink(_p)
+                            if op.success:
+                                _r.visible = False
+                                ui.notify(f"Removed: {_p.name}", type="positive")
+                            else:
+                                ui.notify(
+                                    f"Failed to remove: {op.message}", type="negative"
+                                )
+
+                        ui.button("Remove", on_click=on_remove).props(
+                            "flat dense color=negative size=sm"
+                        )
+                        def on_remap_click(
+                            _e: Any,
+                            _p: Path = link_path,
+                            _d: ui.dialog = dialog,
+                        ) -> None:
+                            _open_remap_dialog(_p, _d)
+
+                        ui.button("Re-map").props("flat dense size=sm").on(
+                            "click", on_remap_click  # type: ignore[misc]
+                        )
+
+                with ui.row().classes("justify-end mt-4"):
+                    ui.button("Close", on_click=dialog.close).props("flat")
+            dialog.open()
+
         def _render_source_detail(panel: ui.column, source: Source) -> None:
             panel.clear()
             with panel:
@@ -131,9 +239,9 @@ def run() -> None:
                     ui.label(f"URL: {source.url}").classes("text-gray-600")
                 ui.label(f"Path: {source.path}").classes("text-gray-600")
                 updated_text = source.last_updated if source.last_updated else "Never"
-                ui.label(f"Last updated: {updated_text}").classes(
-                    "text-gray-600 mb-4"
-                )
+                last_updated_label = ui.label(
+                    f"Last updated: {updated_text}"
+                ).classes("text-gray-600 mb-4")
 
                 if not source.confirmed:
                     ui.label("Confirm skills to enable symlinking").classes(
@@ -179,20 +287,63 @@ def run() -> None:
                             "text-gray-500 italic"
                         )
 
+                output_area = ui.label("").classes(
+                    "text-sm font-mono bg-gray-100 rounded p-2 w-full "
+                    "whitespace-pre-wrap mt-2"
+                )
+                output_area.visible = False
+
+                update_btn_ref: dict[str, ui.button | None] = {"btn": None}
+
+                async def on_update(
+                    _source: Source = source,
+                    _output: ui.label = output_area,
+                    _ts_label: ui.label = last_updated_label,
+                ) -> None:
+                    btn = update_btn_ref["btn"]
+                    if btn:
+                        btn.disable()
+                    _output.set_text("Running git pull…")
+                    _output.visible = True
+
+                    op = await asyncio.to_thread(git_pull, Path(_source.path))
+                    _output.set_text(op.message)
+
+                    if op.success:
+                        _source.last_updated = datetime.now(timezone.utc).isoformat()
+                        save_config(config)
+                        _ts_label.set_text(f"Last updated: {_source.last_updated}")
+
+                        broken = scan_broken_symlinks(_all_target_dirs())
+                        if broken:
+                            _show_broken_symlinks_dialog(broken)
+                        else:
+                            ui.notify(
+                                "Update complete — no broken symlinks.",
+                                type="positive",
+                            )
+                    else:
+                        ui.notify("git pull failed", type="negative")
+
+                    if btn:
+                        btn.enable()
+
                 with ui.row().classes("gap-2 mt-4"):
                     if source.kind == SourceKind.REMOTE:
-                        ui.button(
+                        update_btn_ref["btn"] = ui.button(
                             "Update",
                             icon="refresh",
-                            on_click=lambda: ui.notify("Coming soon"),
+                            on_click=on_update,
                         ).props("color=primary flat")
                     else:
-                        update_btn = ui.button(
+                        disabled_btn = ui.button(
                             "Update",
                             icon="refresh",
                         ).props("flat")
-                        update_btn.disable()
-                        update_btn.tooltip("Update is only available for remote sources")
+                        disabled_btn.disable()
+                        disabled_btn.tooltip(
+                            "Update is only available for remote sources"
+                        )
                     ui.button(
                         "Remove",
                         icon="delete",
@@ -476,6 +627,34 @@ def run() -> None:
 
             dialog.open()
 
+        async def on_update_all() -> None:
+            remote_sources = [
+                s for s in config.sources if s.kind == SourceKind.REMOTE
+            ]
+            if not remote_sources:
+                ui.notify("No remote sources to update.", type="info")
+                return
+            ui.notify(
+                f"Updating {len(remote_sources)} remote source(s)…", type="info"
+            )
+            failed: list[str] = []
+            for src in remote_sources:
+                op = await asyncio.to_thread(git_pull, Path(src.path))
+                if op.success:
+                    src.last_updated = datetime.now(timezone.utc).isoformat()
+                else:
+                    failed.append(f"{src.display_name}: {op.message}")
+            save_config(config)
+            if failed:
+                ui.notify(
+                    "Some updates failed:\n" + "\n".join(failed), type="negative"
+                )
+            broken = scan_broken_symlinks(_all_target_dirs())
+            if broken:
+                _show_broken_symlinks_dialog(broken)
+            else:
+                ui.notify("All remote sources updated successfully.", type="positive")
+
         with ui.splitter(value=20).classes("w-full h-screen") as splitter:
             with splitter.before:
                 with ui.column().classes("w-full p-2 gap-0"):
@@ -483,6 +662,11 @@ def run() -> None:
                         "Symlinks",
                         icon="link",
                         on_click=lambda: open_matrix_view(),
+                    ).props("flat dense").classes("w-full mb-1 justify-start")
+                    ui.button(
+                        "Update All",
+                        icon="cloud_download",
+                        on_click=on_update_all,
                     ).props("flat dense").classes("w-full mb-1 justify-start")
                     ui.separator()
                     with ui.expansion("Skill Sources", icon="folder").classes("w-full"):
