@@ -17,7 +17,7 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "pyproject.toml already updated with scripts and build-system sections. src/skillmanager/ directory already created. Just needs __init__.py, main.py, and verify launch works."
     },
     {
