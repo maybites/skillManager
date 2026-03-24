@@ -21,6 +21,7 @@ from skillmanager.operations import (
     remove_symlink,
     scan_broken_symlinks,
     validate_local_path,
+    validate_project_paths,
 )
 
 ItemType = Union[Source, Project]
@@ -36,6 +37,9 @@ def run() -> None:
         detail_ref: dict[str, ui.column | None] = {"panel": None}
         sources_container_ref: dict[str, ui.column | None] = {"col": None}
         projects_container_ref: dict[str, ui.column | None] = {"col": None}
+        missing_project_ids: dict[str, set[str]] = {
+            "ids": validate_project_paths(config.projects)
+        }
 
         def _last_segment(val: str) -> str:
             seg = val.rstrip("/").rsplit("/", 1)[-1]
@@ -58,10 +62,22 @@ def run() -> None:
                     "cursor-pointer w-full px-3 py-1 rounded items-center gap-2"
                 )
                 with r:
-                    ui.icon("work_outline").classes("text-sm text-gray-500")
+                    if project.id in missing_project_ids["ids"]:
+                        ui.icon("warning").classes("text-sm text-amber-500")
+                    else:
+                        ui.icon("work_outline").classes("text-sm text-gray-500")
                     ui.label(project.display_name).classes("text-sm")
                 r.on("click", lambda _e, row=r, p=project: select_item(row, p))  # type: ignore[misc]
             return r
+
+        def _refresh_projects_sidebar() -> None:
+            col = projects_container_ref["col"]
+            if col is None:
+                return
+            col.clear()
+            selected_row["ref"] = None
+            for project in config.projects:
+                _make_project_row(project)
 
         def _symlink_count(project: Project) -> int:
             sd = project.skills_dir
@@ -69,9 +85,112 @@ def run() -> None:
                 return 0
             return sum(1 for p in sd.iterdir() if p.is_symlink())
 
+        def _confirm_remove_project(project: Project) -> None:
+            with ui.dialog() as dialog, ui.card().classes("w-96"):
+                ui.label("Remove Project").classes("text-xl font-bold mb-4")
+                ui.label(
+                    f"Remove '{project.display_name}' from Skill Manager?"
+                ).classes("text-gray-600 mb-4")
+                ui.label(
+                    "This will not delete any files — only the registration is removed."
+                ).classes("text-gray-500 text-sm mb-4")
+
+                def on_confirm_remove() -> None:
+                    config.projects[:] = [
+                        p for p in config.projects if p.id != project.id
+                    ]
+                    save_config(config)
+                    missing_project_ids["ids"].discard(project.id)
+                    dialog.close()
+                    _refresh_projects_sidebar()
+                    panel = detail_ref["panel"]
+                    if panel:
+                        panel.clear()
+                        with panel:
+                            ui.label("Select an item to see details").classes(
+                                "text-gray-400 text-lg"
+                            )
+
+                with ui.row().classes("w-full justify-end mt-4 gap-2"):
+                    ui.button("Cancel", on_click=dialog.close).props("flat")
+                    ui.button("Remove", on_click=on_confirm_remove).props(
+                        "color=negative"
+                    )
+            dialog.open()
+
+        def _open_update_path_dialog(project: Project) -> None:
+            with ui.dialog() as dialog, ui.card().classes("w-96"):
+                ui.label("Update Project Path").classes("text-xl font-bold mb-4")
+                path_input = ui.input("New Path", value=project.path).classes("w-full")
+                status_label = ui.label("").classes(
+                    "text-red-600 text-sm min-h-[1.25rem] w-full"
+                )
+
+                def on_save_path() -> None:
+                    raw = path_input.value.strip()
+                    if not raw:
+                        status_label.set_text("Please enter a path.")
+                        return
+                    expanded = str(Path(raw).expanduser())
+                    new_p = Path(expanded)
+                    if not new_p.exists():
+                        status_label.set_text("Path does not exist.")
+                        return
+                    if not new_p.is_dir():
+                        status_label.set_text("Path is not a directory.")
+                        return
+                    project.path = expanded
+                    save_config(config)
+                    missing_project_ids["ids"].discard(project.id)
+                    dialog.close()
+                    _refresh_projects_sidebar()
+                    panel = detail_ref["panel"]
+                    if panel:
+                        _render_project_detail(panel, project)
+
+                with ui.row().classes("w-full justify-end mt-4 gap-2"):
+                    ui.button("Cancel", on_click=dialog.close).props("flat")
+                    ui.button("Save", on_click=on_save_path).props("color=primary")
+            dialog.open()
+
         def _render_project_detail(panel: ui.column, project: Project) -> None:
             panel.clear()
             with panel:
+                if project.id in missing_project_ids["ids"]:
+                    # Missing path UI
+                    ui.label(project.display_name).classes("text-xl font-bold mb-2")
+                    ui.label("Project path not found").classes(
+                        "text-amber-700 bg-amber-50 border border-amber-300 "
+                        "rounded px-3 py-2 w-full mb-3"
+                    )
+                    ui.label(f"Path: {project.path}").classes(
+                        "text-red-600 font-mono text-sm mb-4"
+                    )
+                    def on_update_path_click(
+                        _e: Any, _p: Project = project
+                    ) -> None:
+                        _open_update_path_dialog(_p)
+
+                    def on_remove_missing_click(
+                        _e: Any, _p: Project = project
+                    ) -> None:
+                        _confirm_remove_project(_p)
+
+                    with ui.row().classes("gap-2 mt-2"):
+                        ui.button(
+                            "Update Path",
+                            icon="edit",
+                        ).props("color=primary flat").on(
+                            "click", on_update_path_click  # type: ignore[misc]
+                        )
+                        ui.button(
+                            "Remove Project",
+                            icon="delete",
+                        ).props("color=negative flat").on(
+                            "click", on_remove_missing_click  # type: ignore[misc]
+                        )
+                    return
+
                 # Header row: title + Edit Name button
                 name_row = ui.row().classes("items-center gap-2 mb-2 w-full")
                 with name_row:
@@ -118,12 +237,16 @@ def run() -> None:
                 count = _symlink_count(project)
                 ui.label(f"Active symlinks: {count}").classes("text-gray-600 mb-4")
 
+                def on_remove_project_click(_e: Any, _p: Project = project) -> None:
+                    _confirm_remove_project(_p)
+
                 with ui.row().classes("gap-2 mt-2"):
                     ui.button(
                         "Remove Project",
                         icon="delete",
-                        on_click=lambda: ui.notify("Coming soon"),
-                    ).props("color=negative flat")
+                    ).props("color=negative flat").on(
+                        "click", on_remove_project_click  # type: ignore[misc]
+                    )
 
         def _all_target_dirs() -> list[Path]:
             personal_dir = Path.home() / ".claude" / "skills"
@@ -436,12 +559,15 @@ def run() -> None:
                 personal_dir = Path.home() / ".claude" / "skills"
                 personal_dir.mkdir(parents=True, exist_ok=True)
 
-                # Columns: (label, target_skills_dir)
-                targets: list[tuple[str, Path]] = [
-                    ("Personal\n(~/.claude/skills/)", personal_dir)
+                # Columns: (label, target_skills_dir, is_missing)
+                targets: list[tuple[str, Path, bool]] = [
+                    ("Personal\n(~/.claude/skills/)", personal_dir, False)
                 ]
                 for project in config.projects:
-                    targets.append((project.display_name, project.skills_dir))
+                    is_proj_missing = project.id in missing_project_ids["ids"]
+                    targets.append(
+                        (project.display_name, project.skills_dir, is_proj_missing)
+                    )
 
                 # Detect conflicting skill names (same name across different sources)
                 skill_name_counts: dict[str, int] = {}
@@ -461,10 +587,15 @@ def run() -> None:
                     ui.label("Skill").classes("font-semibold text-sm").style(
                         "min-width: 200px"
                     )
-                    for target_name, _ in targets:
-                        ui.label(target_name).classes(
-                            "font-semibold text-sm text-center"
-                        ).style("min-width: 120px; white-space: pre-line")
+                    for target_name, _, is_missing in targets:
+                        col_classes = "font-semibold text-sm text-center"
+                        if is_missing:
+                            col_classes += " text-gray-400"
+                        lbl = ui.label(target_name).classes(col_classes).style(
+                            "min-width: 120px; white-space: pre-line"
+                        )
+                        if is_missing:
+                            lbl.tooltip("Project path not found")
 
                 # Rows grouped by source
                 for source in confirmed:
@@ -484,7 +615,7 @@ def run() -> None:
                                     ).tooltip(
                                         "Conflict: another source has a skill with the same name"
                                     )
-                            for _, target_dir in targets:
+                            for _, target_dir, is_missing in targets:
                                 symlink_path = target_dir / skill.name
                                 src_path = Path(source.path) / skill.rel_path
                                 exists = os.path.exists(str(symlink_path))
@@ -493,38 +624,41 @@ def run() -> None:
                                     "display: flex; justify-content: center"
                                 ):
                                     cb = ui.checkbox(value=exists)
-
-                                    def _on_toggle(
-                                        e: Any,
-                                        _cb: ui.checkbox = cb,
-                                        _src: Path = src_path,
-                                        _dst: Path = symlink_path,
-                                        _source: Source = source,
-                                        _skill: Skill = skill,
-                                    ) -> None:
-                                        if e.value:
-                                            existing = find_owning_source(
-                                                _dst, config.sources
-                                            )
-                                            if existing and existing.id != _source.id:  # type: ignore[union-attr]
-                                                _cb.set_value(False)
-                                                _show_conflict_dialog(
-                                                    _skill,
-                                                    _source,
-                                                    existing,  # type: ignore[arg-type]
-                                                    _dst,
-                                                    _src,
-                                                    _cb,
+                                    if is_missing:
+                                        cb.disable()
+                                        cb.tooltip("Project path not found")
+                                    else:
+                                        def _on_toggle(
+                                            e: Any,
+                                            _cb: ui.checkbox = cb,
+                                            _src: Path = src_path,
+                                            _dst: Path = symlink_path,
+                                            _source: Source = source,
+                                            _skill: Skill = skill,
+                                        ) -> None:
+                                            if e.value:
+                                                existing = find_owning_source(
+                                                    _dst, config.sources
                                                 )
-                                                return
-                                            op = create_symlink(_src, _dst)
-                                        else:
-                                            op = remove_symlink(_dst)
-                                        if not op.success:
-                                            ui.notify(op.message, type="negative")
-                                            _cb.set_value(not e.value)
+                                                if existing and existing.id != _source.id:  # type: ignore[union-attr]
+                                                    _cb.set_value(False)
+                                                    _show_conflict_dialog(
+                                                        _skill,
+                                                        _source,
+                                                        existing,  # type: ignore[arg-type]
+                                                        _dst,
+                                                        _src,
+                                                        _cb,
+                                                    )
+                                                    return
+                                                op = create_symlink(_src, _dst)
+                                            else:
+                                                op = remove_symlink(_dst)
+                                            if not op.success:
+                                                ui.notify(op.message, type="negative")
+                                                _cb.set_value(not e.value)
 
-                                    cb.on_value_change(_on_toggle)  # type: ignore[misc]
+                                        cb.on_value_change(_on_toggle)  # type: ignore[misc]
 
         def open_matrix_view() -> None:
             prev = selected_row["ref"]

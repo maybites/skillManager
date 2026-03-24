@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from skillmanager.models import Source
+    from skillmanager.models import Project, Source
 
 
 @dataclass
@@ -149,6 +149,11 @@ def find_owning_source(link_path: Path, sources: "list[Source]") -> "Source | No
             if real_target == sk_path:
                 return src
     return None
+
+
+def validate_project_paths(projects: "list[Project]") -> set[str]:
+    """Return IDs of projects whose paths no longer exist on disk."""
+    return {p.id for p in projects if not Path(p.path).exists()}
 
 
 def scan_broken_symlinks(target_dirs: list[Path]) -> list[Path]:

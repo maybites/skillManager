@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from skillmanager.models import Skill, Source, SourceKind
+from skillmanager.models import Project, Skill, Source, SourceKind
 from skillmanager.operations import (
     OperationResult,
     add_project,
@@ -18,6 +18,7 @@ from skillmanager.operations import (
     remove_symlink,
     scan_broken_symlinks,
     validate_local_path,
+    validate_project_paths,
 )
 
 
@@ -427,6 +428,34 @@ def test_find_owning_source_empty_sources(tmp_path):
 
     result = find_owning_source(link, [])
     assert result is None
+
+
+# --- validate_project_paths tests ---
+
+
+def test_validate_project_paths_all_present(tmp_path):
+    p1 = Project(id="id1", display_name="P1", path=str(tmp_path))
+    result = validate_project_paths([p1])
+    assert "id1" not in result
+
+
+def test_validate_project_paths_missing(tmp_path):
+    p1 = Project(id="id1", display_name="P1", path=str(tmp_path / "nonexistent"))
+    result = validate_project_paths([p1])
+    assert "id1" in result
+
+
+def test_validate_project_paths_mixed(tmp_path):
+    p1 = Project(id="id1", display_name="P1", path=str(tmp_path))
+    p2 = Project(id="id2", display_name="P2", path=str(tmp_path / "nonexistent"))
+    result = validate_project_paths([p1, p2])
+    assert "id1" not in result
+    assert "id2" in result
+
+
+def test_validate_project_paths_empty():
+    result = validate_project_paths([])
+    assert result == set()
 
 
 def test_find_owning_source_unconfirmed_ignored(tmp_path):
