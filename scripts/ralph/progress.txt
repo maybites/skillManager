@@ -14,6 +14,25 @@ Started: Tue Mar 24 20:28:37 CET 2026
 - NiceGUI dialog: `with ui.dialog() as dialog, ui.card():` — create inside a function and call `dialog.open()` at the end; creates a fresh dialog each time
 - NiceGUI visibility toggle: set `element.visible = False` after the `with` block to hide initially; update in event handlers
 - NiceGUI event handler types: use `Any` for event parameter type in handlers registered via `.on_value_change()` to satisfy pyright
+- NiceGUI async handlers: define handler as `async def`, use `asyncio.to_thread(fn, *args)` for blocking calls (e.g. subprocess); NiceGUI runs async handlers as coroutines automatically
+- NiceGUI dynamic sidebar rows: keep `dict[str, ui.column | None]` ref to a container; use `with container:` at any time to append new rows; elements added outside initial `with` block still render correctly
+- git clone via subprocess: `subprocess.run(["git", "clone", url, str(dest)], capture_output=True, text=True)` — check `returncode == 0`; stderr has the error message on failure
+
+## 2026-03-24 - US-005
+- Created `src/skillmanager/operations.py` with `clone_repo`, `validate_local_path`, `make_slug`, `make_dest_path`
+- Created `tests/test_operations.py` with 15 tests covering all operation functions
+- Updated `main.py`: replaced placeholder notify with real async `on_add` handler; added `_make_source_row` helper for dynamic sidebar updates; refactored sidebar to use `sources_container_ref` dict for dynamic row insertion
+- Remote mode: validates URL non-empty + no duplicate, shows "Cloning…" status, runs git clone in thread, shows error inline on failure
+- Local mode: validates path non-empty + no duplicate, checks path exists/is-dir inline
+- On success: appends to config, saves TOML, closes dialog, adds row to sidebar, auto-selects new source
+- Files changed: src/skillmanager/operations.py (new), tests/test_operations.py (new), src/skillmanager/main.py
+- **Learnings for future iterations:**
+  - NiceGUI async handlers work natively — define `async def on_add()` and pass to `on_click`; NiceGUI schedules it as a coroutine
+  - `asyncio.to_thread(fn, *args)` is the right way to run blocking subprocess calls without freezing the UI
+  - Dynamic sidebar addition: assign element to `dict["col"]`, then `with dict["col"]:` can be called from anywhere inside `index()` to append children — even from async handlers
+  - `add_btn.disable()` / `add_btn.enable()` available on NiceGUI button — useful to prevent double-clicks during async operations
+  - `status_label.classes(remove="text-red-600"); status_label.classes(add="text-blue-600")` changes color dynamically between info/error states
+---
 
 ## 2026-03-24 - US-004
 - Added `open_add_source_dialog()` function inside `index()` in main.py

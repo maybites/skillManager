@@ -88,7 +88,7 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Use subprocess.run(['git', 'clone', url, str(dest)], capture_output=True). REPOS_DIR is ~/.local/share/skillmanager/repos/."
     },
     {
