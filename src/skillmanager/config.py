@@ -23,6 +23,7 @@ def _skill_from_dict(d: dict) -> Skill:
         name=d["name"],
         rel_path=d["rel_path"],
         enabled=d.get("enabled", True),
+        description=d.get("description", ""),
     )
 
 
@@ -56,7 +57,10 @@ def _conflict_from_dict(d: dict) -> ConflictResolution:
 
 
 def _skill_to_dict(s: Skill) -> dict:
-    return {"name": s.name, "rel_path": s.rel_path, "enabled": s.enabled}
+    d: dict = {"name": s.name, "rel_path": s.rel_path, "enabled": s.enabled}
+    if s.description:
+        d["description"] = s.description
+    return d
 
 
 def _source_to_dict(s: Source) -> dict:

@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import subprocess
 import uuid
@@ -52,6 +53,36 @@ def clone_repo(url: str, dest: Path) -> OperationResult:
 
 
 _UNCHECKED_BY_DEFAULT = frozenset({"docs", "tests", ".github", "flowchart"})
+
+_FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---", re.DOTALL)
+
+
+def extract_skill_description(skill_dir: Path) -> str:
+    """Extract the description from YAML frontmatter of the first .md file in skill_dir.
+
+    Looks for SKILL.md first, then falls back to the first .md file found.
+    Returns empty string if no description is found.
+    """
+    candidates = [skill_dir / "SKILL.md"]
+    candidates.extend(sorted(skill_dir.glob("*.md")))
+    for md_file in candidates:
+        if not md_file.is_file():
+            continue
+        try:
+            text = md_file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        m = _FRONTMATTER_RE.match(text)
+        if not m:
+            continue
+        for line in m.group(1).splitlines():
+            line = line.strip()
+            if line.lower().startswith("description:"):
+                value = line.split(":", 1)[1].strip().strip("\"'")
+                if value:
+                    return value
+        break  # found frontmatter but no description — stop looking
+    return ""
 
 
 def detect_skills(source_path: str | Path) -> list[tuple[str, bool]]:

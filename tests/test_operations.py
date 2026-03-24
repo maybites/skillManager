@@ -11,6 +11,7 @@ from skillmanager.operations import (
     clone_repo,
     create_symlink,
     detect_skills,
+    extract_skill_description,
     find_owning_source,
     find_source_symlinks,
     git_pull,
@@ -220,6 +221,68 @@ def test_detect_skills_only_direct_children(tmp_path):
     names = [r[0] for r in results]
     assert "skill-a" in names
     assert "child" not in names
+
+
+# --- extract_skill_description tests ---
+
+
+def test_extract_description_from_skill_md(tmp_path):
+    skill_dir = tmp_path / "my-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: my-skill\ndescription: Does cool things\n---\n# Content\n"
+    )
+    assert extract_skill_description(skill_dir) == "Does cool things"
+
+
+def test_extract_description_falls_back_to_other_md(tmp_path):
+    skill_dir = tmp_path / "my-skill"
+    skill_dir.mkdir()
+    (skill_dir / "README.md").write_text(
+        "---\nname: my-skill\ndescription: From readme\n---\n"
+    )
+    assert extract_skill_description(skill_dir) == "From readme"
+
+
+def test_extract_description_prefers_skill_md(tmp_path):
+    skill_dir = tmp_path / "my-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: x\ndescription: From SKILL\n---\n"
+    )
+    (skill_dir / "README.md").write_text(
+        "---\nname: x\ndescription: From README\n---\n"
+    )
+    assert extract_skill_description(skill_dir) == "From SKILL"
+
+
+def test_extract_description_returns_empty_when_missing(tmp_path):
+    skill_dir = tmp_path / "my-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("---\nname: my-skill\n---\n# No desc\n")
+    assert extract_skill_description(skill_dir) == ""
+
+
+def test_extract_description_no_frontmatter(tmp_path):
+    skill_dir = tmp_path / "my-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("# Just content, no frontmatter\n")
+    assert extract_skill_description(skill_dir) == ""
+
+
+def test_extract_description_no_md_files(tmp_path):
+    skill_dir = tmp_path / "my-skill"
+    skill_dir.mkdir()
+    assert extract_skill_description(skill_dir) == ""
+
+
+def test_extract_description_strips_quotes(tmp_path):
+    skill_dir = tmp_path / "my-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        '---\nname: x\ndescription: "Quoted desc"\n---\n'
+    )
+    assert extract_skill_description(skill_dir) == "Quoted desc"
 
 
 # --- create_symlink tests ---

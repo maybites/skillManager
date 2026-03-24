@@ -13,6 +13,7 @@ class Skill:
     name: str
     rel_path: str
     enabled: bool = True
+    description: str = ""
 
 
 @dataclass
