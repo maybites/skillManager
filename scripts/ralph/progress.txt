@@ -7,6 +7,24 @@ Started: Tue Mar 24 20:28:37 CET 2026
 - Entry point: `uv run skillmanager` maps to `skillmanager.main:run`
 - NiceGUI: run with `host="127.0.0.1"` for localhost-only
 - Build system: hatchling, packages = ["src/skillmanager"]
+- NiceGUI page: use `@ui.page("/")` inside `run()` for proper per-client isolation
+- NiceGUI splitter: `ui.splitter(value=N)` where N is 0-100 (percentage), use `.before`/`.after` slots
+- NiceGUI element click: use `element.on("click", lambda _e, x=x: handler(x))` to capture loop vars; add `# type: ignore[misc]` for pyright lambda type complaints
+- NiceGUI state: use `dict[str, T | None]` containers for mutable state shared across closures (avoids unbound-var issues with pyright)
+
+## 2026-03-24 - US-003
+- Replaced stub ui.label with full splitter-based layout in src/skillmanager/main.py
+- Sidebar: two ui.expansion sections (Skill Sources, Projects) populated from AppConfig
+- Each section has an "+ Add" button wired to ui.notify placeholder
+- Clicking a sidebar entry highlights it (bg-blue-100) and shows detail in right panel
+- Detail panel defaults to "Select an item to see details" placeholder
+- Files changed: src/skillmanager/main.py
+- **Learnings for future iterations:**
+  - Use `@ui.page("/")` inside `run()` — UI defined at module level is shared across clients
+  - `ui.splitter(value=20)` gives ~20% left panel; no direct pixel sizing
+  - Lambda capture in loops: `lambda _e, row=r, s=source: fn(row, s)` — the `_e` absorbs NiceGUI's event arg
+  - Mutable shared state: use `dict[str, T | None]` (e.g. `{"panel": None}`) — avoids pyright unbound-var warnings in nested closures
+---
 
 ## 2026-03-24 - US-001
 - Created src/skillmanager/__init__.py (empty)
