@@ -196,7 +196,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "Broken = os.path.lexists(p) is True AND os.path.exists(p) is False. Store last_updated as ISO timestamp after successful pull."
     },
     {

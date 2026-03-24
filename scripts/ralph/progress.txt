@@ -2,6 +2,21 @@
 Started: Tue Mar 24 20:28:37 CET 2026
 ---
 
+## 2026-03-24 - US-011
+- Added `git_pull(repo_path)` and `scan_broken_symlinks(target_dirs)` to `operations.py`
+- Wired "Update" button in `_render_source_detail` with async handler: shows inline pull output, updates `source.last_updated`, scans for broken symlinks and opens dialog
+- Added `_show_broken_symlinks_dialog` and `_open_remap_dialog` inner functions in `index()` for broken symlink repair UI
+- Added "Update All" button to sidebar nav: runs `git pull` on all remote sources sequentially, then scans for broken symlinks
+- Added 8 new tests covering `git_pull` and `scan_broken_symlinks`
+- Files changed: src/skillmanager/operations.py, src/skillmanager/main.py, tests/test_operations.py
+- **Learnings for future iterations:**
+  - `subprocess.run(["git", "pull"], cwd=str(repo_path), ...)` — cwd param runs git in the repo directory
+  - For pyright on lambda with default arg capture and `on_click`: use a named `def` with `_e: Any` first param + `# type: ignore[misc]` on `.on("click", handler)` to avoid ClickEventArguments type conflict
+  - `ui.button(...).on("click", handler)` is equivalent to `on_click=` but avoids pyright complaining about ClickEventArguments vs plain function
+  - NiceGUI `ui.dialog` can be passed as a default arg to nested functions to keep the dialog reference across closures
+  - For inline output area in detail panels: create `ui.label` with `visible = False`, show it during async operation — avoids re-rendering the entire panel
+---
+
 ## Codebase Patterns
 - Typecheck: `uv run pyright src/` (pyright added as dev dep)
 - Entry point: `uv run skillmanager` maps to `skillmanager.main:run`
@@ -17,6 +32,8 @@ Started: Tue Mar 24 20:28:37 CET 2026
 - NiceGUI async handlers: define handler as `async def`, use `asyncio.to_thread(fn, *args)` for blocking calls (e.g. subprocess); NiceGUI runs async handlers as coroutines automatically
 - NiceGUI dynamic sidebar rows: keep `dict[str, ui.column | None]` ref to a container; use `with container:` at any time to append new rows; elements added outside initial `with` block still render correctly
 - git clone via subprocess: `subprocess.run(["git", "clone", url, str(dest)], capture_output=True, text=True)` — check `returncode == 0`; stderr has the error message on failure
+- git pull via subprocess: `subprocess.run(["git", "pull"], cwd=str(repo_path), capture_output=True, text=True)` — use `cwd` not positional path arg
+- NiceGUI pyright lambda: use `def fn(_e: Any, _arg=arg): ...` + `.on("click", fn)` + `# type: ignore[misc]` to avoid ClickEventArguments conflict in on_click= lambdas
 
 ## 2026-03-24 - US-010
 - Added `create_symlink(src, dst)` and `remove_symlink(dst)` to `operations.py`
