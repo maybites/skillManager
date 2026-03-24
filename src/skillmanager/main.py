@@ -1,4 +1,5 @@
 import asyncio
+import os
 import uuid
 from pathlib import Path
 from typing import Any, Union
@@ -195,6 +196,71 @@ def run() -> None:
                         icon="delete",
                         on_click=lambda: ui.notify("Coming soon"),
                     ).props("color=negative flat")
+
+        def _render_matrix_view(panel: ui.column) -> None:
+            panel.clear()
+            with panel:
+                ui.label("Symlink Matrix").classes("text-2xl font-bold mb-4")
+
+                confirmed = [s for s in config.sources if s.confirmed and s.skills]
+                if not confirmed:
+                    ui.label(
+                        "No confirmed skills yet. Add and confirm skill sources first."
+                    ).classes("text-gray-400 italic text-lg")
+                    return
+
+                # Personal skills dir — auto-create if missing
+                personal_dir = Path.home() / ".claude" / "skills"
+                personal_dir.mkdir(parents=True, exist_ok=True)
+
+                # Columns: (label, target_skills_dir)
+                targets: list[tuple[str, Path]] = [
+                    ("Personal\n(~/.claude/skills/)", personal_dir)
+                ]
+                for project in config.projects:
+                    targets.append((project.display_name, project.skills_dir))
+
+                # Header row
+                with ui.row().classes(
+                    "items-center border-b-2 border-gray-300 pb-2 mb-2"
+                ):
+                    ui.label("Skill").classes("font-semibold text-sm").style(
+                        "min-width: 200px"
+                    )
+                    for target_name, _ in targets:
+                        ui.label(target_name).classes(
+                            "font-semibold text-sm text-center"
+                        ).style("min-width: 120px; white-space: pre-line")
+
+                # Rows grouped by source
+                for source in confirmed:
+                    ui.label(source.display_name).classes(
+                        "font-bold text-sm text-gray-700 "
+                        "bg-gray-100 px-2 py-1 rounded mt-3 w-full"
+                    )
+                    for skill in source.skills:
+                        with ui.row().classes("items-center hover:bg-gray-50 rounded"):
+                            ui.label(skill.name).classes(
+                                "text-sm text-gray-600"
+                            ).style("min-width: 200px")
+                            for _, target_dir in targets:
+                                symlink_path = target_dir / skill.name
+                                exists = os.path.exists(str(symlink_path))
+                                with ui.element("div").style(
+                                    "min-width: 120px; "
+                                    "display: flex; justify-content: center"
+                                ):
+                                    ui.checkbox(value=exists)
+
+        def open_matrix_view() -> None:
+            prev = selected_row["ref"]
+            if prev is not None:
+                prev.classes(remove="bg-blue-100 font-semibold")
+                selected_row["ref"] = None
+            panel = detail_ref["panel"]
+            if panel is None:
+                return
+            _render_matrix_view(panel)
 
         def select_item(row: ui.row, item: ItemType) -> None:
             prev = selected_row["ref"]
@@ -394,6 +460,12 @@ def run() -> None:
         with ui.splitter(value=20).classes("w-full h-screen") as splitter:
             with splitter.before:
                 with ui.column().classes("w-full p-2 gap-0"):
+                    ui.button(
+                        "Symlinks",
+                        icon="link",
+                        on_click=lambda: open_matrix_view(),
+                    ).props("flat dense").classes("w-full mb-1 justify-start")
+                    ui.separator()
                     with ui.expansion("Skill Sources", icon="folder").classes("w-full"):
                         sources_container = ui.column().classes("w-full gap-0")
                         sources_container_ref["col"] = sources_container
