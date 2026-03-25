@@ -10,6 +10,19 @@
   - Quality check is `pyright` (not mypy); run via `.venv/bin/pyright`
 ---
 
+## 2026-03-25 - US-019
+- Added `drift_state: dict[str, bool]` at page closure level (keyed by `str(copy_path)`)
+- Added `_check_drift_for_source(source)` helper that walks all targets, checks `is_copy()`, calls `compute_drift()`
+- After `on_update` and `on_update_all` succeed, calls `_check_drift_for_source` and re-renders matrix
+- Matrix cell rendering checks `drift_state.get(str(symlink_path))` and adds amber dot badge overlay using absolute positioned span
+- Drift badge clears via `drift_state.pop()` in `_on_copy_click` when copy is removed
+- Files changed: `src/skillmanager/main.py`
+- **Learnings for future iterations:**
+  - Amber badge: wrap copy icon in `div[position:relative]`, add `span[position:absolute, top:-2px, right:-2px, 8x8px amber circle]`
+  - `drift_state` dict in page closure is runtime-only (not persisted) — correct per AC
+  - After pull, matrix re-renders via `_render_matrix_view(detail_ref["panel"])` (panel may be None if matrix not shown)
+---
+
 ## 2026-03-25 - US-018
 - Wired copy icon click handler: calls `copy_skill` on empty cell, `remove_copy` on copied cell
 - Added `copy_skill` and `remove_copy` to imports from `skillmanager.operations`
