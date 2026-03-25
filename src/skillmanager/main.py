@@ -716,14 +716,30 @@ def run() -> None:
                 # Rows grouped by source (collapsible)
                 for source in confirmed:
                     linked_count = 0
+                    copied_count = 0
                     for skill in source.skills:
                         for _, target_dir, is_missing in targets:
-                            if not is_missing and os.path.exists(
-                                str(target_dir / skill.name)
-                            ):
+                            if is_missing:
+                                continue
+                            skill_path = target_dir / skill.name
+                            if os.path.islink(str(skill_path)):
                                 linked_count += 1
                                 break
+                            elif os.path.exists(str(skill_path)):
+                                copied_count += 1
+                                break
                     total_count = len(source.skills)
+
+                    if copied_count > 0:
+                        header_label = (
+                            f"{source.display_name} "
+                            f"({linked_count}/{total_count} linked, {copied_count} copied)"
+                        )
+                    else:
+                        header_label = (
+                            f"{source.display_name} "
+                            f"({linked_count}/{total_count} linked)"
+                        )
 
                     with ui.row().classes(
                         "items-center bg-gray-100 px-2 py-1 rounded mt-3 "
@@ -733,8 +749,7 @@ def run() -> None:
                             "text-gray-500 text-sm"
                         ).style("transition: transform 0.2s ease-in-out")
                         ui.label(
-                            f"{source.display_name} "
-                            f"({linked_count}/{total_count} linked)"
+                            header_label
                         ).classes("font-bold text-sm text-gray-700")
 
                     skills_container = ui.column().classes("w-full gap-0").style(
