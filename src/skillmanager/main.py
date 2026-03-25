@@ -3,7 +3,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Union
+from typing import Any, Callable, Union
 
 from nicegui import app, ui
 
@@ -556,7 +556,8 @@ def run() -> None:
             existing_source: Source,
             dst: Path,
             new_src: Path,
-            cb: ui.checkbox,
+            on_confirm: Callable[[], None],
+            on_cancel: Callable[[], None] = lambda: None,
         ) -> None:
             with ui.dialog() as dialog, ui.card().classes("w-[480px]"):
                 ui.label("Skill Conflict").classes(
@@ -579,7 +580,6 @@ def run() -> None:
                         return
                     op_cr = create_symlink(new_src, dst)
                     if op_cr.success:
-                        cb.set_value(True)
                         config.conflict_resolutions = [
                             r
                             for r in config.conflict_resolutions
@@ -600,12 +600,13 @@ def run() -> None:
                             f"Resolved: '{new_source.display_name}' wins",
                             type="positive",
                         )
+                        on_confirm()
                     else:
                         ui.notify(f"Failed: {op_cr.message}", type="negative")
                     dialog.close()
 
                 def on_keep_existing() -> None:
-                    cb.set_value(False)
+                    on_cancel()
                     dialog.close()
 
                 with ui.row().classes("w-full gap-2 mt-4"):
@@ -836,6 +837,71 @@ def run() -> None:
                                                 copy_icon.style(
                                                     "pointer-events: none; opacity: 0.3"
                                                 )
+
+                                            if not is_missing:
+                                                cell_state = {"is_symlink": is_symlink}
+
+                                                def _on_link_click(
+                                                    _link: ui.icon = link_icon,
+                                                    _copy: ui.icon = copy_icon,
+                                                    _src: Path = src_path,
+                                                    _dst: Path = symlink_path,
+                                                    _source: Source = source,
+                                                    _skill: Skill = skill,
+                                                    _st: dict[str, bool] = cell_state,
+                                                ) -> None:
+                                                    if _st["is_symlink"]:
+                                                        op = remove_symlink(_dst)
+                                                        if not op.success:
+                                                            ui.notify(op.message, type="negative")
+                                                            return
+                                                        _st["is_symlink"] = False
+                                                        _link.classes(
+                                                            remove="text-blue-500",
+                                                            add="text-gray-300",
+                                                        )
+                                                        _copy.style(replace="")
+                                                    else:
+                                                        existing = find_owning_source(
+                                                            _dst, config.sources
+                                                        )
+                                                        if existing and existing.id != _source.id:  # type: ignore[union-attr]
+                                                            def _on_confirm(
+                                                                __link: ui.icon = _link,
+                                                                __copy: ui.icon = _copy,
+                                                                __st: dict[str, bool] = _st,
+                                                            ) -> None:
+                                                                __st["is_symlink"] = True
+                                                                __link.classes(
+                                                                    remove="text-gray-300",
+                                                                    add="text-blue-500",
+                                                                )
+                                                                __copy.style(
+                                                                    replace="pointer-events: none; opacity: 0.3"
+                                                                )
+                                                            _show_conflict_dialog(
+                                                                _skill,
+                                                                _source,
+                                                                existing,  # type: ignore[arg-type]
+                                                                _dst,
+                                                                _src,
+                                                                _on_confirm,
+                                                            )
+                                                            return
+                                                        op = create_symlink(_src, _dst)
+                                                        if not op.success:
+                                                            ui.notify(op.message, type="negative")
+                                                            return
+                                                        _st["is_symlink"] = True
+                                                        _link.classes(
+                                                            remove="text-gray-300",
+                                                            add="text-blue-500",
+                                                        )
+                                                        _copy.style(
+                                                            replace="pointer-events: none; opacity: 0.3"
+                                                        )
+
+                                                link_icon.on("click", _on_link_click)  # type: ignore[misc]
 
                                 # Collapsible description below the row
                                 if skill.description:
