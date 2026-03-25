@@ -1,258 +1,126 @@
 {
   "project": "Skill Manager",
-  "branchName": "ralph/skill-manager",
-  "description": "GUI app (Python + NiceGUI) for managing Claude Code skills — clone repos, detect skills, symlink to personal and project targets",
+  "branchName": "ralph/copy-skills",
+  "description": "Add ability to create complete copies of skills into project vaults alongside existing symlink management for portability and offline use",
   "userStories": [
     {
-      "id": "US-001",
-      "title": "Project scaffold and launchable app",
-      "description": "As a developer, I need the package structure and entrypoint in place so that `uv run skillmanager` launches the NiceGUI app.",
+      "id": "US-015",
+      "title": "Copy skill operations module",
+      "description": "As a developer, I need backend operations for copying skills, detecting copies, computing drift, and removing copies so the UI can use them.",
       "acceptanceCriteria": [
-        "src/skillmanager/__init__.py exists",
-        "src/skillmanager/main.py exists with a run() function that starts NiceGUI on localhost only",
-        "pyproject.toml has [project.scripts] entry: skillmanager = 'skillmanager.main:run'",
-        "pyproject.toml has [build-system] using hatchling with packages = ['src/skillmanager']",
-        "App title is 'Skill Manager'",
-        "`uv run skillmanager` launches the app without errors",
+        "copy_skill(src: Path, dst: Path) -> OperationResult performs shutil.copytree(src, dst) with parent directory creation via dst.parent.mkdir(parents=True, exist_ok=True)",
+        "remove_copy(dst: Path) -> OperationResult performs shutil.rmtree(dst) with OSError handling",
+        "is_copy(path: Path) -> bool returns True if path exists and is a directory and is not a symlink",
+        "compute_drift(source_skill: Path, copied_skill: Path) -> bool returns True if file content SHA-256 hashes differ between source and copy (walks both trees, compares sorted file lists and per-file hashes)",
+        "Unit tests cover: successful copy, copy to existing path fails, remove copy, is_copy vs is_symlink vs missing, drift detection with identical trees, drift detection with changed file, drift detection with added/removed file",
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "pyproject.toml already updated with scripts and build-system sections. src/skillmanager/ directory already created. Just needs __init__.py, main.py, and verify launch works."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-002",
-      "title": "Config and data models layer",
-      "description": "As a developer, I need XDG-compliant config paths and typed dataclasses so all other modules have a stable data layer to build on.",
+      "id": "US-016",
+      "title": "Replace matrix checkboxes with split link/copy icons",
+      "description": "As a user, I want each matrix cell to show two small icons (link and copy) instead of a single checkbox so I can choose how to place each skill.",
       "acceptanceCriteria": [
-        "src/skillmanager/models.py defines dataclasses: Skill (name, rel_path, enabled), Source (id, display_name, kind, path, url, skills, confirmed, last_updated), Project (id, display_name, path), SymlinkTarget, ConflictResolution",
-        "Source.kind is an enum with REMOTE and LOCAL values",
-        "src/skillmanager/config.py defines CONFIG_DIR = ~/.config/skillmanager/, REPOS_DIR = ~/.local/share/skillmanager/repos/",
-        "config.py has load_config() -> AppConfig and save_config(AppConfig) functions",
-        "AppConfig holds lists of Source and Project objects",
-        "Config is persisted as TOML using tomllib (read) and tomli-w (write)",
-        "Missing config file returns empty AppConfig (no error)",
-        "Typecheck passes"
+        "Each matrix cell renders two small icons side-by-side: Material Icon 'link' and 'content_copy'",
+        "Empty cell: both icons are dimmed/neutral, both clickable",
+        "Symlinked cell (os.path.islink is True): link icon is highlighted in blue/primary color, copy icon is grayed out and disabled (pointer-events: none)",
+        "Copied cell (os.path.exists and not os.path.islink): copy icon is highlighted in green, link icon is grayed out and disabled",
+        "Cell container has min-width of 140px to accommodate both icons",
+        "Matrix title changed from 'Symlink Matrix' to 'Skill Matrix'",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Use Python 3.11 stdlib tomllib for reading. tomli-w is already in dependencies for writing."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-003",
-      "title": "Sidebar + detail panel layout",
-      "description": "As a user, I want to see a sidebar with Skill Sources and Projects sections and a detail panel on the right so I can navigate the app.",
+      "id": "US-017",
+      "title": "Wire link icon to create and remove symlinks",
+      "description": "As a user, I want clicking the link icon to create or remove a symlink, preserving the existing symlink behavior.",
       "acceptanceCriteria": [
-        "App uses ui.splitter with sidebar (~250px) on left and detail panel on right",
-        "Sidebar has two collapsible sections: 'Skill Sources' and 'Projects'",
-        "Each section has an 'Add' button (wired to placeholder dialogs for now)",
-        "Clicking a sidebar entry highlights it and updates the detail panel",
-        "Detail panel shows placeholder text when nothing is selected",
+        "Clicking the link icon on an empty cell creates a symlink (same as existing checkbox on-check behavior)",
+        "Link icon becomes highlighted, copy icon becomes disabled",
+        "Clicking the highlighted link icon removes the symlink (same as existing checkbox on-uncheck behavior)",
+        "Cell returns to empty state with both icons enabled",
+        "Conflict detection still triggers when creating a symlink where another source's skill exists (existing find_owning_source behavior preserved)",
+        "Error notifications shown on failure, icon state reverts",
         "Typecheck passes",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Sidebar entries are populated from AppConfig loaded at startup. Use ui.splitter, ui.expansion for collapsible sections."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-004",
-      "title": "Add source dialog — remote URL and local path",
-      "description": "As a user, I want to add a skill repository by pasting a remote git URL or providing a local path so the app can track it.",
+      "id": "US-018",
+      "title": "Wire copy icon to create and remove copies",
+      "description": "As a user, I want clicking the copy icon to create a full copy of the skill folder, and clicking it again to remove the copy.",
       "acceptanceCriteria": [
-        "'Add' button in Skill Sources section opens a dialog",
-        "Dialog has a toggle between 'Remote URL' and 'Local Path' modes",
-        "Remote mode: text input for git URL, optional display name input",
-        "Local mode: text input for directory path, optional display name input",
-        "Display name defaults to the last path segment of the URL or path",
-        "Clicking Cancel closes dialog without saving",
-        "Clicking Add triggers validation (see US-005 for git clone, US-002 for path check)",
+        "Clicking the copy icon on an empty cell calls copy_skill(source_skill_path, target_dir/skill_name)",
+        "Copy icon becomes highlighted in green, link icon becomes disabled",
+        "Clicking the highlighted copy icon calls remove_copy(target_dir/skill_name)",
+        "Cell returns to empty state with both icons enabled",
+        "Error notifications shown on failure, icon state reverts",
+        "Disabled icons for missing project columns still work (both icons disabled with tooltip)",
         "Typecheck passes",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Dialog only — git clone and path validation happen in US-005. This story is purely the UI shell."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-005",
-      "title": "Clone remote repo and register local path",
-      "description": "As a user, when I submit the Add Source dialog, I want the app to clone the remote repo or validate and register the local path, then show the new source in the sidebar.",
+      "id": "US-019",
+      "title": "Detect and display drifted copies after git pull",
+      "description": "As a user, I want to see which copied skills are outdated after updating a source so I know to re-copy them.",
       "acceptanceCriteria": [
-        "Remote URL: app runs `git clone <url> <repos_dir>/<slug>` using subprocess and system git",
-        "Clone progress/errors are shown inline in the dialog",
-        "Local path: app checks path exists; shows inline error if not",
-        "On success: Source is added to AppConfig, saved to TOML, appears in sidebar",
-        "Sidebar entry is auto-selected and detail panel opens for the new source",
-        "Duplicate URL or path shows an inline error without closing dialog",
-        "Typecheck passes"
-      ],
-      "priority": 5,
-      "passes": true,
-      "notes": "Use subprocess.run(['git', 'clone', url, str(dest)], capture_output=True). REPOS_DIR is ~/.local/share/skillmanager/repos/."
-    },
-    {
-      "id": "US-006",
-      "title": "Auto-detect skills and confirmation UI",
-      "description": "As a user, after adding a source, I want the detail panel to show candidate skill folders so I can confirm or exclude them before symlinking.",
-      "acceptanceCriteria": [
-        "Source detail panel shows a list of candidate skill folders (subdirectories containing at least one .md file, repo root excluded)",
-        "Each candidate has a checkbox defaulting to checked",
-        "Folders named 'docs', 'tests', '.github', 'flowchart' are detected but default to unchecked",
-        "'Confirm Skills' button saves the checked selection to Source.skills and sets Source.confirmed = True",
-        "After confirming, the detail panel shows the confirmed skill list (not the detection UI)",
-        "Unconfirmed sources show a banner: 'Confirm skills to enable symlinking'",
+        "After git pull completes (Update or Update All), for each updated source: find all copied skills (is_copy returns True) across all target directories",
+        "For each found copy, call compute_drift(source_skill_path, copy_path)",
+        "If drifted: the copy icon in the matrix shows an amber dot/badge overlay",
+        "Hovering the amber badge shows tooltip: 'Source has been updated since this copy was made'",
+        "Drift state is stored in a runtime dict (not persisted to config), keyed by target_dir/skill_name",
+        "Drift badge clears when the copy is removed (cell returns to empty)",
+        "Non-updated sources are not drift-checked (optimization)",
         "Typecheck passes",
         "Verify in browser using dev-browser skill"
       ],
-      "priority": 6,
-      "passes": true,
-      "notes": "Walk source.path subdirectories. A candidate is any dir with at least one .md file at any depth. Use os.walk or pathlib.rglob('*.md')."
+      "priority": 5,
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-007",
-      "title": "Add managed project",
-      "description": "As a user, I want to register a project directory so I can symlink skills into its .claude/skills/ folder.",
+      "id": "US-020",
+      "title": "Source removal leaves copies untouched",
+      "description": "As a user, I want copies to survive when I remove a skill source since copies are independent snapshots.",
       "acceptanceCriteria": [
-        "'Add' button in Projects sidebar section opens a dialog",
-        "Dialog has a path input and a display name input (defaults to folder name)",
-        "Inline error shown if path does not exist on disk",
-        "On success: Project saved to AppConfig, appears in sidebar",
-        "App auto-creates <project_path>/.claude/skills/ if it does not exist",
-        "New project is auto-selected in sidebar and detail panel opens",
+        "find_source_symlinks only returns actual symlinks (os.path.islink check), not copied directories",
+        "Source removal confirmation dialog only lists symlinks that will be removed, not copies",
+        "After source removal, copied skill folders remain in their project vaults",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "Update source group header counts for copies",
+      "description": "As a user, I want the source group headers in the matrix to reflect both linked and copied skills.",
+      "acceptanceCriteria": [
+        "Source group header shows count as 'X/Y linked, Z copied' instead of just 'X/Y linked'",
+        "Linked count only counts symlinks (os.path.islink)",
+        "Copied count only counts copies (os.path.exists and not os.path.islink)",
+        "If copied count is 0, only 'X/Y linked' is shown (no change from current behavior)",
         "Typecheck passes",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "Project.skills_dir property returns path / '.claude' / 'skills'. Create it with Path.mkdir(parents=True, exist_ok=True)."
-    },
-    {
-      "id": "US-008",
-      "title": "Source and project detail panels",
-      "description": "As a user, I want clicking a source or project in the sidebar to show a detail panel with its metadata and action buttons.",
-      "acceptanceCriteria": [
-        "Source detail panel shows: display name, kind (Remote/Local), path/URL, confirmed skills list, last-updated timestamp",
-        "Source detail panel has 'Update' button (remote only, disabled for local with tooltip) and 'Remove' button",
-        "Project detail panel shows: display name, path, .claude/skills/ path, symlink count summary",
-        "Project detail panel has 'Edit Name' inline and 'Remove' button",
-        "Buttons are wired to placeholder handlers (actual logic in later stories)",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "Keep handlers as stubs (ui.notify('Coming soon')) for Update, Remove, Edit. Full logic in US-011, US-013, US-014."
-    },
-    {
-      "id": "US-009",
-      "title": "Symlink checkbox matrix — layout and read state",
-      "description": "As a user, I want a matrix view showing all confirmed skills as rows and all targets (Personal + projects) as columns, with checkboxes reflecting current symlink state.",
-      "acceptanceCriteria": [
-        "A 'Symlinks' button or top-nav link opens the matrix view",
-        "Rows are confirmed skills grouped by source (source name as group header)",
-        "Columns are: 'Personal (~/.claude/skills/)' first, then each project in add-order",
-        "Each cell is a checkbox whose checked state reflects whether the symlink actually exists on disk (os.path.exists, not lexists)",
-        "Matrix refreshes from disk on every navigation to the view",
-        "Empty state message shown if no confirmed skills exist",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 9,
-      "passes": true,
-      "notes": "Symlink path: <target_skills_dir>/<skill.name>. Check with os.path.exists(symlink_path) — returns False for broken symlinks. Personal target is ~/.claude/skills/, auto-create if missing."
-    },
-    {
-      "id": "US-010",
-      "title": "Symlink create and remove operations",
-      "description": "As a user, I want checking a matrix cell to create a symlink and unchecking to remove it, with immediate filesystem effect.",
-      "acceptanceCriteria": [
-        "Checking a cell: creates symlink <target_skills_dir>/<skill.name> -> <source_path>/<skill.rel_path>",
-        "Target skills directory is auto-created if missing",
-        "Unchecking a cell: removes the symlink with os.unlink()",
-        "If checking fails (e.g. permissions), an error toast is shown and checkbox reverts",
-        "If unchecking fails, an error toast is shown and checkbox reverts",
-        "No conflict handling yet (added in US-012)",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 10,
-      "passes": true,
-      "notes": "Use os.symlink(src, dst) for create. src is absolute path to skill folder. dst is absolute path in target skills dir. Catch OSError for error toasts."
-    },
-    {
-      "id": "US-011",
-      "title": "Git update with output display and broken symlink scan",
-      "description": "As a user, I want to pull the latest changes for a remote source and see the output, then be alerted to any broken symlinks.",
-      "acceptanceCriteria": [
-        "'Update' button on source detail panel runs `git pull` in the repo directory",
-        "Top-level 'Update All' button runs git pull on all remote sources sequentially",
-        "Pull stdout/stderr is shown inline in the detail panel during and after the operation",
-        "After pull completes, app scans all managed symlinks: any symlink where os.path.exists() is False but os.path.lexists() is True is broken",
-        "If broken symlinks found: warning dialog lists them with 'Remove' and 'Re-map' actions per item",
-        "'Remove' deletes the symlink; 'Re-map' opens a skill picker to reassign that target slot",
-        "If no broken symlinks: success toast shown",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 11,
-      "passes": true,
-      "notes": "Broken = os.path.lexists(p) is True AND os.path.exists(p) is False. Store last_updated as ISO timestamp after successful pull."
-    },
-    {
-      "id": "US-012",
-      "title": "Symlink conflict detection and resolution",
-      "description": "As a user, I want to be warned when two sources have skills with the same name targeting the same destination, and to choose which source wins.",
-      "acceptanceCriteria": [
-        "When two confirmed skills share the same folder name, both rows show a conflict indicator (amber icon)",
-        "Attempting to check a cell when another source's skill of the same name is already symlinked there shows a conflict dialog",
-        "Conflict dialog names both sources and asks which should win for that target",
-        "Choosing a winner: removes old symlink, creates new one, persists resolution in config",
-        "Each target column resolves conflicts independently",
-        "Resolved conflicts shown in config as ConflictResolution entries",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 12,
-      "passes": true,
-      "notes": "Conflict = two Skill objects with same .name across different Sources. Check at checkbox-click time by scanning target dir for existing symlink pointing to a different source."
-    },
-    {
-      "id": "US-013",
-      "title": "Missing project path handling",
-      "description": "As a user, I want to be warned on launch when a registered project no longer exists on disk so I can fix or remove it.",
-      "acceptanceCriteria": [
-        "On app launch, all registered project paths are validated with Path.exists()",
-        "Projects with missing paths show a warning icon (amber) in the sidebar",
-        "Their detail panel shows the missing path and two action buttons: 'Update Path' and 'Remove Project'",
-        "'Update Path' opens a path input; saving re-validates and updates config if valid",
-        "'Remove Project' removes the project from config after confirmation",
-        "Symlink matrix columns for missing projects are greyed out with a tooltip 'Project path not found'",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 13,
-      "passes": true,
-      "notes": "Validate on startup in main.py before rendering. Store validation result in runtime state (not persisted). Re-validate when user updates the path."
-    },
-    {
-      "id": "US-014",
-      "title": "Remove skill source with symlink cleanup",
-      "description": "As a user, I want to remove a skill source and have all its symlinks cleaned up so I don't have orphaned links.",
-      "acceptanceCriteria": [
-        "'Remove' button on source detail panel opens a confirmation dialog",
-        "Dialog lists all active symlinks that will be deleted (symlink path per target)",
-        "On confirm: all symlinks from that source are deleted across all targets",
-        "Source is removed from AppConfig and saved",
-        "Cloned remote repos are deleted from ~/.local/share/skillmanager/repos/<slug>/",
-        "Local path sources are only de-registered (their folder is not touched)",
-        "Sidebar updates immediately after removal",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 14,
-      "passes": true,
-      "notes": "Use shutil.rmtree() for remote repo cleanup. For each skill in source.skills, check each target's skills_dir for a symlink pointing into this source and unlink it."
+      "passes": false,
+      "notes": ""
     }
   ]
 }

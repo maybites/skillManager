@@ -1,0 +1,87 @@
+## 2026-03-24 - US-012
+- Added `find_owning_source(link_path, sources)` to `operations.py`: resolves symlink target and matches against confirmed source skill paths; returns owning Source or None
+- Added `_show_conflict_dialog(...)` to `main.py`: shows amber-titled dialog naming both sources, two buttons to choose winner; removes old symlink, creates new, persists `ConflictResolution` entry in config
+- Updated `_render_matrix_view` to detect conflicting skill names (same name across multiple sources) and show amber warning icon with tooltip on affected rows
+- Updated `_on_toggle` handler: when checking a cell, calls `find_owning_source`; if existing symlink is from a different source, reverts checkbox and opens conflict dialog
+- Added 5 unit tests for `find_owning_source` in `tests/test_operations.py`
+- Files changed: src/skillmanager/operations.py, src/skillmanager/main.py, tests/test_operations.py
+- **Learnings for future iterations:**
+  - `find_owning_source` uses `TYPE_CHECKING` guard to import `Source` for type annotations without runtime circular import risk
+  - Conflict indicator is computed from all confirmed sources before rendering — build a `set[str]` of names with count > 1
+  - When conflict dialog is cancelled ("Keep existing"), just call `cb.set_value(False)` — no symlink ops needed since we reverted the checkbox before opening the dialog
+  - `ConflictResolution.target_id` stores `str(dst.parent)` (the target skills dir path), not a project id
+---
+
+## 2026-03-24 - US-009
+- Added `_render_matrix_view(panel)` to main.py: clears panel, shows empty state if no confirmed skills, renders header row + grouped skill rows with per-cell `os.path.exists` checkboxes
+- Added `open_matrix_view()` function that deselects sidebar item and renders matrix view
+- Added "Symlinks" button at top of left sidebar (before the expansion sections)
+- Auto-creates `~/.claude/skills/` personal dir on matrix view navigation
+- Files changed: src/skillmanager/main.py
+- **Learnings for future iterations:**
+  - Matrix uses `os.path.exists(str(symlink_path))` — returns False for broken symlinks (correct per spec), not `os.path.lexists`
+  - `_render_matrix_view` is called fresh on every navigation, so disk state is always current
+  - Column targets list: `list[tuple[str, Path]]` — Personal first, then projects in add-order
+  - Checkboxes in US-009 have no on_change handler (read-only state); US-010 will add the handlers
+---
+
+## Codebase Patterns
+- `Project.skills_dir` is a `@property` returning `Path(self.path) / ".claude" / "skills"`
+- `add_project(path)` in `operations.py` validates path + auto-creates `.claude/skills/` dir; returns `OperationResult`
+- Container ref pattern: `{name}_container_ref: dict[str, ui.column | None]` initialized to `{"col": None}`, then assigned in layout; use `# type: ignore[arg-type,union-attr]` on the `with` statement
+- `detect_skills(path)` returns `list[tuple[str, bool]]` — rel_path and enabled_by_default; folders in `_UNCHECKED_BY_DEFAULT` frozenset default to False
+- `_render_source_detail(panel, source)` pattern: function takes the panel and calls `panel.clear()` internally, allowing it to re-render in-place (used for confirm callback too)
+- When calling a render function that manages its own `panel.clear() + with panel:`, do NOT wrap the call in another `with panel:` from the caller
+- Use `monkeypatch` to override `_CONFIG_FILE` and `CONFIG_DIR` in config module for tests
+- TOML serialization via `tomllib` (stdlib, read) + `tomli-w` (write); convert dataclasses to plain dicts first
+- Enum values stored as strings in TOML (e.g. `kind = "remote"`)
+
+---
+
+## 2026-03-24 - US-008
+- Enhanced `_render_source_detail`: now shows Kind (Remote/Local), URL (if remote), last-updated timestamp, disabled Update button for local sources (with tooltip), stub Remove button
+- Enhanced `_render_project_detail`: now shows symlink count, inline Edit Name (show/hide input row), stub Remove Project button
+- Added `_symlink_count(project)` helper that counts symlinks in `project.skills_dir`
+- Files changed: src/skillmanager/main.py
+- **Learnings for future iterations:**
+  - Inline edit pattern: create two rows (display row + edit row), toggle `.visible` between them; define save/cancel as named `def` functions to avoid mypy issues with lambdas
+  - `edit_btn.on("click", lambda _e: on_edit_name())` — NiceGUI button `.on()` passes an event arg, so the lambda must accept it (use `_e`)
+  - `_symlink_count` uses `p.is_symlink()` not `p.exists()` — counts the link itself, not the target
+---
+
+## 2026-03-24 - US-007
+- Added `Project.skills_dir` property to `models.py` (returns `Path(path) / ".claude" / "skills"`)
+- Added `add_project(path)` to `operations.py`: validates path exists + is dir, auto-creates `.claude/skills/` with `mkdir(parents=True, exist_ok=True)`
+- Added 4 tests for `add_project` in `tests/test_operations.py`
+- Updated `main.py`: added `projects_container_ref`, `_make_project_row()`, `_render_project_detail()`, `open_add_project_dialog()`, wired "+ Add" button in Projects sidebar
+- Files changed: src/skillmanager/models.py, src/skillmanager/operations.py, src/skillmanager/main.py, tests/test_operations.py
+- **Learnings for future iterations:**
+  - `@property` works fine on dataclasses — just import the type at module level
+  - The `# type: ignore[arg-type]` on container ref `with` statements also needs `union-attr` to suppress all mypy noise
+  - Duplicate detection for projects uses `p.path == expanded` (compare expanded paths)
+---
+
+## 2026-03-24 - US-002
+- Implemented `src/skillmanager/models.py`: dataclasses Skill, Source, Project, SymlinkTarget, ConflictResolution; SourceKind enum with REMOTE/LOCAL values
+- Implemented `src/skillmanager/config.py`: CONFIG_DIR, REPOS_DIR, AppConfig dataclass, load_config()/save_config() with TOML persistence
+- Created `tests/__init__.py` and `tests/test_config.py` with 4 passing tests covering missing file, round-trip, enum handling, and empty config
+- Files changed: src/skillmanager/models.py, src/skillmanager/config.py, tests/__init__.py, tests/test_config.py, pyproject.toml (added pytest dev dep)
+- **Learnings for future iterations:**
+  - pytest must be added as dev dependency (`uv add --dev pytest`) — not present by default
+  - pyproject.toml already had `[tool.pytest.ini_options]` or similar; check with `uv run pytest` directly
+  - `tomllib` is Python 3.11 stdlib; no extra dep needed for reading
+  - Module-level `_CONFIG_FILE` can be monkeypatched directly in tests for isolation
+---
+
+## 2026-03-24 - US-006
+- Added `detect_skills(source_path)` to `operations.py`: walks direct subdirs, finds those with any `.md` file at any depth; returns `(rel_path, enabled_by_default)` tuples with `docs/tests/.github/flowchart` defaulting to False
+- Added 7 tests for `detect_skills` in `tests/test_operations.py`
+- Updated `main.py`: replaced inline source detail rendering with `_render_source_detail()` helper that handles both unconfirmed (checkbox list + Confirm Skills button + banner) and confirmed (skill list) states
+- Unconfirmed sources show amber banner "Confirm skills to enable symlinking"
+- Clicking "Confirm Skills" saves checked skills to `source.skills`, sets `source.confirmed = True`, saves config, and re-renders panel
+- Files changed: src/skillmanager/operations.py, src/skillmanager/main.py, tests/test_operations.py
+- **Learnings for future iterations:**
+  - `_render_source_detail` manages its own `panel.clear()` — callers must NOT wrap it in another `with panel:` or double-clearing will occur with no error but confusing context nesting
+  - NiceGUI closures over loop variables: use default arg trick (`cb=cb` in lambdas) if ever putting lambdas in loops
+  - `pathlib.Path.rglob("*.md")` is lazy — wrapping in `any()` short-circuits on first match (good for perf)
+---
