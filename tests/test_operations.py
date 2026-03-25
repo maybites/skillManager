@@ -589,6 +589,22 @@ def test_find_source_symlinks_multiple_targets(tmp_path):
     assert link2 in result
 
 
+def test_find_source_symlinks_excludes_copies(tmp_path):
+    """Copied directories (not symlinks) must not appear in find_source_symlinks."""
+    import shutil
+
+    src = _make_source(tmp_path, "source_a", "my-skill")
+    target_dir = tmp_path / "target_skills"
+    target_dir.mkdir()
+    copy_path = target_dir / "my-skill"
+    # Create a real directory copy (not a symlink)
+    shutil.copytree(str(tmp_path / "source_a" / "my-skill"), str(copy_path))
+
+    result = find_source_symlinks(src, [target_dir])
+    assert copy_path not in result
+    assert result == []
+
+
 # --- remove_source_repo tests ---
 
 

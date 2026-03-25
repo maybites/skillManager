@@ -209,7 +209,7 @@ def find_source_symlinks(source: "Source", target_dirs: list[Path]) -> list[Path
         if not target_dir.exists():
             continue
         for entry in target_dir.iterdir():
-            if not os.path.lexists(str(entry)):
+            if not os.path.islink(str(entry)):
                 continue
             try:
                 raw = os.readlink(str(entry))
