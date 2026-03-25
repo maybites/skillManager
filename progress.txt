@@ -10,6 +10,13 @@
   - Quality check is `pyright` (not mypy); run via `.venv/bin/pyright`
 ---
 
+## 2026-03-25 - US-020
+- Added explicit `os.path.islink()` check in `find_source_symlinks` (replaces `os.path.lexists` + OSError approach)
+- Copies (real directories) are now explicitly excluded via islink check, not just implicitly via readlink OSError
+- Added `test_find_source_symlinks_excludes_copies` test verifying shutil.copytree directories are excluded
+- Files changed: `src/skillmanager/operations.py`, `tests/test_operations.py`
+---
+
 ## 2026-03-25 - US-019
 - Added `drift_state: dict[str, bool]` at page closure level (keyed by `str(copy_path)`)
 - Added `_check_drift_for_source(source)` helper that walks all targets, checks `is_copy()`, calls `compute_drift()`
