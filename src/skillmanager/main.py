@@ -49,6 +49,8 @@ def run() -> None:
             "ids": validate_project_paths(config.projects)
         }
         drift_state: dict[str, bool] = {}
+        current_view: dict[str, str] = {"name": "setup"}
+        matrix_container_ref: dict[str, ui.column | None] = {"col": None}
 
         def _last_segment(val: str) -> str:
             seg = val.rstrip("/").rsplit("/", 1)[-1]
@@ -60,7 +62,10 @@ def run() -> None:
                     "cursor-pointer w-full px-3 py-1 rounded items-center gap-2"
                 )
                 with r:
-                    ui.icon("folder_open").classes("text-sm text-gray-500")
+                    icon_name = (
+                        "cloud" if source.kind == SourceKind.REMOTE else "folder_open"
+                    )
+                    ui.icon(icon_name).classes("text-sm text-gray-500")
                     ui.label(source.display_name).classes("text-sm")
                 r.on("click", lambda _e, row=r, s=source: select_item(row, s))  # type: ignore[misc]
             return r
@@ -528,9 +533,10 @@ def run() -> None:
                         save_config(config)
                         _ts_label.set_text(f"Last updated: {_source.last_updated}")
                         _check_drift_for_source(_source)
-                        panel = detail_ref["panel"]
-                        if panel is not None:
-                            _render_matrix_view(panel)
+                        # Refresh matrix if that view is active
+                        mcol = matrix_container_ref.get("col")
+                        if mcol is not None and current_view["name"] == "matrix":
+                            _render_matrix_view(mcol)
 
                         broken = scan_broken_symlinks(_all_target_dirs())
                         if broken:
@@ -546,6 +552,35 @@ def run() -> None:
                     if btn:
                         btn.enable()
 
+                async def on_rescan(
+                    _source: Source = source,
+                    _output: ui.label = output_area,
+                    _ts_label: ui.label = last_updated_label,
+                ) -> None:
+                    btn = update_btn_ref["btn"]
+                    if btn:
+                        btn.disable()
+                    _output.set_text("Rescanning skills…")
+                    _output.visible = True
+
+                    changed = rescan_source_skills(_source)
+                    if changed:
+                        _source.last_updated = datetime.now(timezone.utc).isoformat()
+                        save_config(config)
+                        _ts_label.set_text(f"Last updated: {_source.last_updated}")
+                        _check_drift_for_source(_source)
+                        _output.set_text("Skills updated.")
+                        ui.notify("Skills rescanned — list updated.", type="positive")
+                        panel = detail_ref["panel"]
+                        if panel is not None:
+                            _render_source_detail(panel, _source)
+                    else:
+                        _output.set_text("No changes detected.")
+                        ui.notify("No new or removed skills found.", type="info")
+
+                    if btn:
+                        btn.enable()
+
                 with ui.row().classes("gap-2 mt-4"):
                     if source.kind == SourceKind.REMOTE:
                         update_btn_ref["btn"] = ui.button(
@@ -554,14 +589,11 @@ def run() -> None:
                             on_click=on_update,
                         ).props("color=primary flat")
                     else:
-                        disabled_btn = ui.button(
-                            "Update",
+                        update_btn_ref["btn"] = ui.button(
+                            "Rescan Skills",
                             icon="refresh",
-                        ).props("flat")
-                        disabled_btn.disable()
-                        disabled_btn.tooltip(
-                            "Update is only available for remote sources"
-                        )
+                            on_click=on_rescan,
+                        ).props("color=primary flat")
                     def on_remove_source_click(
                         _e: Any, _s: Source = source
                     ) -> None:
@@ -1049,16 +1081,6 @@ def run() -> None:
                                         skill_header, sk_chevron, desc_container  # type: ignore[possibly-undefined]
                                     )
 
-        def open_matrix_view() -> None:
-            prev = selected_row["ref"]
-            if prev is not None:
-                prev.classes(remove="bg-blue-100 font-semibold")
-                selected_row["ref"] = None
-            panel = detail_ref["panel"]
-            if panel is None:
-                return
-            _render_matrix_view(panel)
-
         def select_item(row: ui.row, item: ItemType) -> None:
             prev = selected_row["ref"]
             if prev is not None:
@@ -1276,9 +1298,9 @@ def run() -> None:
             save_config(config)
             for src in updated_sources:
                 _check_drift_for_source(src)
-            panel = detail_ref["panel"]
-            if panel is not None and updated_sources:
-                _render_matrix_view(panel)
+            mcol = matrix_container_ref.get("col")
+            if mcol is not None and updated_sources and current_view["name"] == "matrix":
+                _render_matrix_view(mcol)
             if failed:
                 ui.notify(
                     "Some updates failed:\n" + "\n".join(failed), type="negative"
@@ -1289,46 +1311,93 @@ def run() -> None:
             else:
                 ui.notify("All remote sources updated successfully.", type="positive")
 
-        with ui.splitter(value=20).classes("w-full h-screen") as splitter:
-            with splitter.before:
+        # -- Top navigation bar --
+        with ui.row().classes(
+            "w-full items-center px-4 py-2 bg-white border-b gap-2"
+        ):
+            view_toggle = ui.toggle(
+                {"matrix": "Matrix", "setup": "Setup"}, value="setup"
+            ).props("dense no-caps toggle-color=primary")
+
+        # -- Matrix view (full width) --
+        matrix_view = ui.column().classes("w-full p-6")
+        matrix_view.visible = False
+        matrix_container_ref["col"] = matrix_view
+
+        # -- Setup view (splitter with tabs) --
+        setup_view = ui.splitter(value=20).classes("w-full h-screen")
+        with setup_view:
+            with setup_view.before:
                 with ui.column().classes("w-full p-2 gap-0"):
-                    ui.button(
-                        "Symlinks",
-                        icon="link",
-                        on_click=lambda: open_matrix_view(),
-                    ).props("flat dense").classes("w-full mb-1 justify-start")
-                    ui.button(
-                        "Update All",
-                        icon="cloud_download",
-                        on_click=on_update_all,
-                    ).props("flat dense").classes("w-full mb-1 justify-start")
-                    ui.separator()
-                    with ui.expansion("Skill Sources", icon="folder").classes("w-full"):
-                        sources_container = ui.column().classes("w-full gap-0")
-                        sources_container_ref["col"] = sources_container
-                        for source in config.sources:
-                            _make_source_row(source)
-                        ui.button(
-                            "+ Add",
-                            on_click=open_add_source_dialog,
-                        ).props("flat dense color=primary").classes("w-full mt-1")
+                    with ui.tabs().props("dense no-caps").classes("w-full") as sidebar_tabs:
+                        skills_tab = ui.tab("Skills", icon="folder")
+                        projects_tab = ui.tab("Projects", icon="work")
 
-                    with ui.expansion("Projects", icon="work").classes("w-full"):
-                        projects_container = ui.column().classes("w-full gap-0")
-                        projects_container_ref["col"] = projects_container
-                        for project in config.projects:
-                            _make_project_row(project)
-                        ui.button(
-                            "+ Add",
-                            on_click=open_add_project_dialog,
-                        ).props("flat dense color=primary").classes("w-full mt-1")
+                    with ui.tab_panels(
+                        sidebar_tabs, value=skills_tab
+                    ).classes("w-full"):
+                        with ui.tab_panel(skills_tab).classes("p-0 pt-2"):
+                            ui.button(
+                                "Update All",
+                                icon="cloud_download",
+                                on_click=on_update_all,
+                            ).props("flat dense").classes(
+                                "w-full mb-1 justify-start"
+                            )
+                            sources_container = ui.column().classes("w-full gap-0")
+                            sources_container_ref["col"] = sources_container
+                            for source in config.sources:
+                                _make_source_row(source)
+                            ui.button(
+                                "+ Add",
+                                on_click=open_add_source_dialog,
+                            ).props("flat dense color=primary").classes(
+                                "w-full mt-1"
+                            )
 
-            with splitter.after:
+                        with ui.tab_panel(projects_tab).classes("p-0 pt-2"):
+                            projects_container = ui.column().classes("w-full gap-0")
+                            projects_container_ref["col"] = projects_container
+                            for project in config.projects:
+                                _make_project_row(project)
+                            ui.button(
+                                "+ Add",
+                                on_click=open_add_project_dialog,
+                            ).props("flat dense color=primary").classes(
+                                "w-full mt-1"
+                            )
+
+                    def _on_tab_change() -> None:
+                        prev = selected_row["ref"]
+                        if prev is not None:
+                            prev.classes(remove="bg-blue-100 font-semibold")
+                            selected_row["ref"] = None
+                        panel = detail_ref["panel"]
+                        if panel:
+                            panel.clear()
+                            with panel:
+                                ui.label("Select an item to see details").classes(
+                                    "text-gray-400 text-lg"
+                                )
+
+                    sidebar_tabs.on_value_change(lambda _e: _on_tab_change())  # type: ignore[misc]
+
+            with setup_view.after:
                 detail_col = ui.column().classes("w-full p-6")
                 detail_ref["panel"] = detail_col
                 with detail_col:
                     ui.label("Select an item to see details").classes(
                         "text-gray-400 text-lg"
                     )
+
+        def _on_view_change(e: Any) -> None:
+            is_matrix = e.value == "matrix"
+            current_view["name"] = e.value
+            matrix_view.visible = is_matrix
+            setup_view.visible = not is_matrix
+            if is_matrix:
+                _render_matrix_view(matrix_view)
+
+        view_toggle.on_value_change(_on_view_change)  # type: ignore[misc]
 
     ui.run(host="127.0.0.1", title="Skill Manager", reload=False)
