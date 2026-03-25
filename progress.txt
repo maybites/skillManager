@@ -10,6 +10,13 @@
   - Quality check is `pyright` (not mypy); run via `.venv/bin/pyright`
 ---
 
+## 2026-03-25 - US-021
+- Updated source group header linked_count to use `os.path.islink()` instead of `os.path.exists()`
+- Added `copied_count` tracking using `os.path.exists() and not islink`
+- Header label: `"(X/Y linked, Z copied)"` when copies > 0, else `"(X/Y linked)"` unchanged
+- Files changed: `src/skillmanager/main.py`
+---
+
 ## 2026-03-25 - US-020
 - Added explicit `os.path.islink()` check in `find_source_symlinks` (replaces `os.path.lexists` + OSError approach)
 - Copies (real directories) are now explicitly excluded via islink check, not just implicitly via readlink OSError
