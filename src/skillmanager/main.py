@@ -634,7 +634,7 @@ def run() -> None:
 
             with panel:
                 with ui.row().classes("items-center gap-2 mb-4"):
-                    ui.label("Symlink Matrix").classes("text-2xl font-bold")
+                    ui.label("Skill Matrix").classes("text-2xl font-bold")
                     ui.button(
                         icon="refresh",
                         on_click=lambda: _render_matrix_view(panel),
@@ -684,7 +684,7 @@ def run() -> None:
                         if is_missing:
                             col_classes += " text-gray-400"
                         lbl = ui.label(target_name).classes(col_classes).style(
-                            "min-width: 120px; white-space: pre-line"
+                            "min-width: 140px; white-space: pre-line"
                         )
                         if is_missing:
                             lbl.tooltip("Project path not found")
@@ -795,50 +795,47 @@ def run() -> None:
                                     for _, target_dir, is_missing in targets:
                                         symlink_path = target_dir / skill.name
                                         src_path = Path(source.path) / skill.rel_path
-                                        exists = os.path.exists(str(symlink_path))
+                                        is_symlink = os.path.islink(str(symlink_path))
+                                        is_copied = (
+                                            os.path.exists(str(symlink_path))
+                                            and not is_symlink
+                                        )
                                         with ui.element("div").style(
-                                            "min-width: 120px; "
-                                            "display: flex; justify-content: center"
+                                            "min-width: 140px; display: flex; "
+                                            "justify-content: center; "
+                                            "align-items: center; gap: 8px"
                                         ):
-                                            cb = ui.checkbox(value=exists)
+                                            # Link icon
+                                            link_cls = (
+                                                "text-xl cursor-pointer "
+                                                + ("text-blue-500" if is_symlink else "text-gray-300")
+                                            )
+                                            link_icon = ui.icon("link").classes(link_cls)
                                             if is_missing:
-                                                cb.disable()
-                                                cb.tooltip("Project path not found")
-                                            else:
+                                                link_icon.style(
+                                                    "pointer-events: none; opacity: 0.4"
+                                                )
+                                                link_icon.tooltip("Project path not found")
+                                            elif is_copied:
+                                                link_icon.style(
+                                                    "pointer-events: none; opacity: 0.3"
+                                                )
 
-                                                def _on_toggle(
-                                                    e: Any,
-                                                    _cb: ui.checkbox = cb,
-                                                    _src: Path = src_path,
-                                                    _dst: Path = symlink_path,
-                                                    _source: Source = source,
-                                                    _skill: Skill = skill,
-                                                ) -> None:
-                                                    if e.value:
-                                                        existing = find_owning_source(
-                                                            _dst, config.sources
-                                                        )
-                                                        if existing and existing.id != _source.id:  # type: ignore[union-attr]
-                                                            _cb.set_value(False)
-                                                            _show_conflict_dialog(
-                                                                _skill,
-                                                                _source,
-                                                                existing,  # type: ignore[arg-type]
-                                                                _dst,
-                                                                _src,
-                                                                _cb,
-                                                            )
-                                                            return
-                                                        op = create_symlink(_src, _dst)
-                                                    else:
-                                                        op = remove_symlink(_dst)
-                                                    if not op.success:
-                                                        ui.notify(
-                                                            op.message, type="negative"
-                                                        )
-                                                        _cb.set_value(not e.value)
-
-                                                cb.on_value_change(_on_toggle)  # type: ignore[misc]
+                                            # Copy icon
+                                            copy_cls = (
+                                                "text-xl cursor-pointer "
+                                                + ("text-green-500" if is_copied else "text-gray-300")
+                                            )
+                                            copy_icon = ui.icon("content_copy").classes(copy_cls)
+                                            if is_missing:
+                                                copy_icon.style(
+                                                    "pointer-events: none; opacity: 0.4"
+                                                )
+                                                copy_icon.tooltip("Project path not found")
+                                            elif is_symlink:
+                                                copy_icon.style(
+                                                    "pointer-events: none; opacity: 0.3"
+                                                )
 
                                 # Collapsible description below the row
                                 if skill.description:
