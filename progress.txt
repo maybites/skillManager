@@ -10,6 +10,19 @@
   - Quality check is `pyright` (not mypy); run via `.venv/bin/pyright`
 ---
 
+## 2026-03-25 - US-017
+- Wired link icon click handler: creates symlink when empty, removes when active
+- Refactored `_show_conflict_dialog` to use `on_confirm`/`on_cancel` callbacks instead of `ui.checkbox` reference
+- Added `Callable` to typing imports
+- Cell state tracked via `cell_state = {"is_symlink": is_symlink}` mutable dict (default-arg captured in closure)
+- On success: link icon turns blue, copy icon disabled; on remove: link icon grays, copy icon re-enabled
+- Files changed: `src/skillmanager/main.py`
+- **Learnings for future iterations:**
+  - `_show_conflict_dialog` now uses `on_confirm: Callable[[], None]` — pass a lambda that updates icon state
+  - `.classes(remove="X", add="Y")` updates NiceGUI element classes dynamically
+  - `.style(replace="")` clears inline styles; `.style(replace="pointer-events: none; opacity: 0.3")` disables
+---
+
 ## 2026-03-25 - US-016
 - Replaced checkboxes in matrix cells with two icons: `ui.icon("link")` and `ui.icon("content_copy")`
 - State detection: `os.path.islink()` for symlinked, `os.path.exists() and not is_symlink` for copied
