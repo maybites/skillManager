@@ -241,7 +241,10 @@ def copy_skill(src: Path, dst: Path) -> OperationResult:
 def remove_copy(dst: Path) -> OperationResult:
     """Remove a copied skill directory at dst using shutil.rmtree."""
     try:
-        shutil.rmtree(str(dst))
+        if dst.is_file():
+            dst.unlink()
+        else:
+            shutil.rmtree(str(dst))
         return OperationResult(success=True)
     except OSError as e:
         return OperationResult(success=False, message=str(e))

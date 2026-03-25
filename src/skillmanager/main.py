@@ -701,7 +701,7 @@ def run() -> None:
                     "items-center border-b-2 border-gray-300 pb-2 mb-2"
                 ):
                     ui.label("Skill").classes("font-semibold text-sm").style(
-                        "min-width: 200px"
+                        "width: 260px; min-width: 260px; flex-shrink: 0"
                     )
                     for target_name, _, is_missing in targets:
                         col_classes = "font-semibold text-sm text-center"
@@ -812,7 +812,7 @@ def run() -> None:
                                         "items-center gap-0"
                                         + (" cursor-pointer" if skill.description else "")
                                     ).style(
-                                        "min-width: 200px"
+                                        "width: 260px; min-width: 260px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis"
                                     ) as skill_header:
                                         if skill.description:
                                             sk_chevron = ui.icon("chevron_right").classes(
@@ -835,10 +835,7 @@ def run() -> None:
                                         symlink_path = target_dir / skill.name
                                         src_path = Path(source.path) / skill.rel_path
                                         is_symlink = os.path.islink(str(symlink_path))
-                                        is_copied = (
-                                            os.path.exists(str(symlink_path))
-                                            and not is_symlink
-                                        )
+                                        is_copied = is_copy(symlink_path)
                                         with ui.element("div").style(
                                             "min-width: 140px; display: flex; "
                                             "justify-content: center; "
