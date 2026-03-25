@@ -66,7 +66,69 @@ def run() -> None:
                         "cloud" if source.kind == SourceKind.REMOTE else "folder_open"
                     )
                     ui.icon(icon_name).classes("text-sm text-gray-500")
-                    ui.label(source.display_name).classes("text-sm")
+                    ui.label(source.display_name).classes("text-sm flex-1")
+
+                    async def _on_row_refresh(_e: Any, _s: Source = source) -> None:
+                        ui.notify(f"Updating {_s.display_name}…", type="info")
+                        if _s.kind == SourceKind.REMOTE:
+                            op = await asyncio.to_thread(git_pull, Path(_s.path))
+                        else:
+                            changed = rescan_source_skills(_s)
+                            if changed:
+                                _s.last_updated = datetime.now(timezone.utc).isoformat()
+                                save_config(config)
+                                _check_drift_for_source(_s)
+                                ui.notify(
+                                    f"{_s.display_name}: skills updated.", type="positive"
+                                )
+                            else:
+                                ui.notify(
+                                    f"{_s.display_name}: no changes detected.", type="info"
+                                )
+                            panel = detail_ref["panel"]
+                            if panel is not None:
+                                _render_source_detail(panel, _s)
+                            return
+                        if op.success:
+                            _s.last_updated = datetime.now(timezone.utc).isoformat()
+                            save_config(config)
+                            _check_drift_for_source(_s)
+                            mcol = matrix_container_ref.get("col")
+                            if mcol is not None and current_view["name"] == "matrix":
+                                _render_matrix_view(mcol)
+                            broken = scan_broken_symlinks(_all_target_dirs())
+                            if broken:
+                                _show_broken_symlinks_dialog(broken)
+                            else:
+                                ui.notify(
+                                    f"{_s.display_name}: updated successfully.",
+                                    type="positive",
+                                )
+                        else:
+                            ui.notify(
+                                f"{_s.display_name}: update failed — {op.message}",
+                                type="negative",
+                            )
+                        panel = detail_ref["panel"]
+                        if panel is not None:
+                            _render_source_detail(panel, _s)
+
+                    def _on_row_delete(_e: Any, _s: Source = source) -> None:
+                        _confirm_remove_source(_s)
+
+                    ui.button(icon="refresh").props(
+                        "flat round dense size=xs"
+                    ).classes("text-gray-400").on(
+                        "click", _on_row_refresh  # type: ignore[misc]
+                    ).tooltip(
+                        "Update" if source.kind == SourceKind.REMOTE else "Rescan"
+                    )
+                    ui.button(icon="delete").props(
+                        "flat round dense size=xs"
+                    ).classes("text-gray-400").on(
+                        "click", _on_row_delete  # type: ignore[misc]
+                    ).tooltip("Remove")
+
                 r.on("click", lambda _e, row=r, s=source: select_item(row, s))  # type: ignore[misc]
             return r
 
@@ -80,7 +142,17 @@ def run() -> None:
                         ui.icon("warning").classes("text-sm text-amber-500")
                     else:
                         ui.icon("work_outline").classes("text-sm text-gray-500")
-                    ui.label(project.display_name).classes("text-sm")
+                    ui.label(project.display_name).classes("text-sm flex-1")
+
+                    def _on_project_delete(_e: Any, _p: Project = project) -> None:
+                        _confirm_remove_project(_p)
+
+                    ui.button(icon="delete").props(
+                        "flat round dense size=xs"
+                    ).classes("text-gray-400").on(
+                        "click", _on_project_delete  # type: ignore[misc]
+                    ).tooltip("Remove")
+
                 r.on("click", lambda _e, row=r, p=project: select_item(row, p))  # type: ignore[misc]
             return r
 
@@ -194,23 +266,12 @@ def run() -> None:
                     ) -> None:
                         _open_update_path_dialog(_p)
 
-                    def on_remove_missing_click(
-                        _e: Any, _p: Project = project
-                    ) -> None:
-                        _confirm_remove_project(_p)
-
                     with ui.row().classes("gap-2 mt-2"):
                         ui.button(
                             "Update Path",
                             icon="edit",
                         ).props("color=primary flat").on(
                             "click", on_update_path_click  # type: ignore[misc]
-                        )
-                        ui.button(
-                            "Remove Project",
-                            icon="delete",
-                        ).props("color=negative flat").on(
-                            "click", on_remove_missing_click  # type: ignore[misc]
                         )
                     return
 
@@ -258,18 +319,7 @@ def run() -> None:
                 ui.label(f"Skills dir: {project.skills_dir}").classes("text-gray-600")
 
                 count = _symlink_count(project)
-                ui.label(f"Active symlinks: {count}").classes("text-gray-600 mb-4")
-
-                def on_remove_project_click(_e: Any, _p: Project = project) -> None:
-                    _confirm_remove_project(_p)
-
-                with ui.row().classes("gap-2 mt-2"):
-                    ui.button(
-                        "Remove Project",
-                        icon="delete",
-                    ).props("color=negative flat").on(
-                        "click", on_remove_project_click  # type: ignore[misc]
-                    )
+                ui.label(f"Active symlinks: {count}").classes("text-gray-600")
 
         def _all_target_dirs() -> list[Path]:
             personal_dir = Path.home() / ".claude" / "skills"
@@ -451,9 +501,7 @@ def run() -> None:
                     ui.label(f"URL: {source.url}").classes("text-gray-600")
                 ui.label(f"Path: {source.path}").classes("text-gray-600")
                 updated_text = source.last_updated if source.last_updated else "Never"
-                last_updated_label = ui.label(
-                    f"Last updated: {updated_text}"
-                ).classes("text-gray-600 mb-4")
+                ui.label(f"Last updated: {updated_text}").classes("text-gray-600 mb-4")
 
                 if not source.confirmed:
                     ui.label("Confirm skills to enable symlinking").classes(
@@ -506,105 +554,6 @@ def run() -> None:
                             "text-gray-500 italic"
                         )
 
-                output_area = ui.label("").classes(
-                    "text-sm font-mono bg-gray-100 rounded p-2 w-full "
-                    "whitespace-pre-wrap mt-2"
-                )
-                output_area.visible = False
-
-                update_btn_ref: dict[str, ui.button | None] = {"btn": None}
-
-                async def on_update(
-                    _source: Source = source,
-                    _output: ui.label = output_area,
-                    _ts_label: ui.label = last_updated_label,
-                ) -> None:
-                    btn = update_btn_ref["btn"]
-                    if btn:
-                        btn.disable()
-                    _output.set_text("Running git pull…")
-                    _output.visible = True
-
-                    op = await asyncio.to_thread(git_pull, Path(_source.path))
-                    _output.set_text(op.message)
-
-                    if op.success:
-                        _source.last_updated = datetime.now(timezone.utc).isoformat()
-                        save_config(config)
-                        _ts_label.set_text(f"Last updated: {_source.last_updated}")
-                        _check_drift_for_source(_source)
-                        # Refresh matrix if that view is active
-                        mcol = matrix_container_ref.get("col")
-                        if mcol is not None and current_view["name"] == "matrix":
-                            _render_matrix_view(mcol)
-
-                        broken = scan_broken_symlinks(_all_target_dirs())
-                        if broken:
-                            _show_broken_symlinks_dialog(broken)
-                        else:
-                            ui.notify(
-                                "Update complete — no broken symlinks.",
-                                type="positive",
-                            )
-                    else:
-                        ui.notify("git pull failed", type="negative")
-
-                    if btn:
-                        btn.enable()
-
-                async def on_rescan(
-                    _source: Source = source,
-                    _output: ui.label = output_area,
-                    _ts_label: ui.label = last_updated_label,
-                ) -> None:
-                    btn = update_btn_ref["btn"]
-                    if btn:
-                        btn.disable()
-                    _output.set_text("Rescanning skills…")
-                    _output.visible = True
-
-                    changed = rescan_source_skills(_source)
-                    if changed:
-                        _source.last_updated = datetime.now(timezone.utc).isoformat()
-                        save_config(config)
-                        _ts_label.set_text(f"Last updated: {_source.last_updated}")
-                        _check_drift_for_source(_source)
-                        _output.set_text("Skills updated.")
-                        ui.notify("Skills rescanned — list updated.", type="positive")
-                        panel = detail_ref["panel"]
-                        if panel is not None:
-                            _render_source_detail(panel, _source)
-                    else:
-                        _output.set_text("No changes detected.")
-                        ui.notify("No new or removed skills found.", type="info")
-
-                    if btn:
-                        btn.enable()
-
-                with ui.row().classes("gap-2 mt-4"):
-                    if source.kind == SourceKind.REMOTE:
-                        update_btn_ref["btn"] = ui.button(
-                            "Update",
-                            icon="refresh",
-                            on_click=on_update,
-                        ).props("color=primary flat")
-                    else:
-                        update_btn_ref["btn"] = ui.button(
-                            "Rescan Skills",
-                            icon="refresh",
-                            on_click=on_rescan,
-                        ).props("color=primary flat")
-                    def on_remove_source_click(
-                        _e: Any, _s: Source = source
-                    ) -> None:
-                        _confirm_remove_source(_s)
-
-                    ui.button(
-                        "Remove",
-                        icon="delete",
-                    ).props("color=negative flat").on(
-                        "click", on_remove_source_click  # type: ignore[misc]
-                    )
 
         def _show_conflict_dialog(
             skill: Skill,
@@ -700,7 +649,7 @@ def run() -> None:
                         )
 
             with panel:
-                with ui.row().classes("items-center gap-2 mb-4"):
+                with ui.row().classes("items-center gap-2 mb-2"):
                     ui.label("Skill Matrix").classes("text-2xl font-bold")
                     ui.button(
                         icon="refresh",
@@ -785,7 +734,7 @@ def run() -> None:
                         )
 
                     with ui.row().classes(
-                        "items-center bg-gray-100 px-2 py-1 rounded mt-3 "
+                        "items-center bg-gray-100 px-2 py-1 rounded mt-1 "
                         "w-full cursor-pointer select-none gap-1"
                     ) as header_row:
                         chevron = ui.icon("chevron_right").classes(
@@ -796,7 +745,7 @@ def run() -> None:
                         ).classes("font-bold text-sm text-gray-700")
 
                     skills_container = ui.column().classes("w-full gap-0").style(
-                        "overflow: hidden; max-height: 0; "
+                        "overflow: hidden; max-height: 0; height: 0; "
                         "transition: max-height 0.2s ease-in-out"
                     )
 
@@ -829,7 +778,7 @@ def run() -> None:
                                 _container.style(
                                     replace=(
                                         "overflow: hidden; "
-                                        "max-height: 0; "
+                                        "max-height: 0; height: 0; "
                                         "transition: max-height 0.2s ease-in-out"
                                     )
                                 )
@@ -1035,7 +984,7 @@ def run() -> None:
                                 # Collapsible description below the row
                                 if skill.description:
                                     desc_container = ui.element("div").style(
-                                        "overflow: hidden; max-height: 0; "
+                                        "overflow: hidden; max-height: 0; height: 0; "
                                         "transition: max-height 0.2s ease-in-out"
                                     )
                                     with desc_container:
@@ -1066,7 +1015,7 @@ def run() -> None:
                                             else:
                                                 _cont.style(replace=(
                                                     "overflow: hidden; "
-                                                    "max-height: 0; "
+                                                    "max-height: 0; height: 0; "
                                                     "transition: max-height 0.2s ease-in-out"
                                                 ))
                                                 _chev.style(replace=(
@@ -1338,34 +1287,34 @@ def run() -> None:
                     ).classes("w-full"):
                         with ui.tab_panel(skills_tab).classes("p-0 pt-2"):
                             ui.button(
-                                "Update All",
-                                icon="cloud_download",
-                                on_click=on_update_all,
-                            ).props("flat dense").classes(
-                                "w-full mb-1 justify-start"
+                                "+ Add",
+                                on_click=open_add_source_dialog,
+                            ).props("flat dense color=primary").classes(
+                                "w-full mb-1"
                             )
                             sources_container = ui.column().classes("w-full gap-0")
                             sources_container_ref["col"] = sources_container
                             for source in config.sources:
                                 _make_source_row(source)
                             ui.button(
-                                "+ Add",
-                                on_click=open_add_source_dialog,
-                            ).props("flat dense color=primary").classes(
-                                "w-full mt-1"
+                                "Update All",
+                                icon="cloud_download",
+                                on_click=on_update_all,
+                            ).props("flat dense").classes(
+                                "w-full mt-1 justify-start"
                             )
 
                         with ui.tab_panel(projects_tab).classes("p-0 pt-2"):
-                            projects_container = ui.column().classes("w-full gap-0")
-                            projects_container_ref["col"] = projects_container
-                            for project in config.projects:
-                                _make_project_row(project)
                             ui.button(
                                 "+ Add",
                                 on_click=open_add_project_dialog,
                             ).props("flat dense color=primary").classes(
-                                "w-full mt-1"
+                                "w-full mb-1"
                             )
+                            projects_container = ui.column().classes("w-full gap-0")
+                            projects_container_ref["col"] = projects_container
+                            for project in config.projects:
+                                _make_project_row(project)
 
                     def _on_tab_change() -> None:
                         prev = selected_row["ref"]
