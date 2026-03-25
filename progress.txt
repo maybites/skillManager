@@ -1,3 +1,15 @@
+## 2026-03-25 - US-015
+- Implemented `copy_skill`, `remove_copy`, `is_copy`, `compute_drift` in `operations.py`
+- Added 15 unit tests in `tests/test_operations.py` covering all acceptance criteria
+- All 73 tests pass, pyright reports 0 errors
+- Files changed: `src/skillmanager/operations.py`, `tests/test_operations.py`
+- **Learnings for future iterations:**
+  - `compute_drift` uses `hashlib` imported locally inside the function (avoids top-level import)
+  - `is_copy(path)` = `path.exists() and path.is_dir() and not path.is_symlink()`
+  - `copy_skill` uses `shutil.copytree(str(src), str(dst))` — fails if dst already exists (same as shutil default)
+  - Quality check is `pyright` (not mypy); run via `.venv/bin/pyright`
+---
+
 ## Codebase Patterns
 - `Project.skills_dir` is a `@property` returning `Path(self.path) / ".claude" / "skills"`
 - `add_project(path)` in `operations.py` validates path + auto-creates `.claude/skills/` dir; returns `OperationResult`
@@ -12,5 +24,7 @@
 - NiceGUI closures over loop variables: use default arg trick (`cb=cb` in lambdas)
 - `find_owning_source` uses `TYPE_CHECKING` guard for Source import
 - Conflict indicator computed from all confirmed sources before rendering — build `set[str]` of names with count > 1
+- Quality check is `pyright` (`.venv/bin/pyright`), not mypy
+- `is_copy(path)` = `path.exists() and path.is_dir() and not path.is_symlink()`
 
 ---
