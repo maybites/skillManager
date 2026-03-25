@@ -1349,4 +1349,4 @@ def run() -> None:
 
         view_toggle.on_value_change(_on_view_change)  # type: ignore[misc]
 
-    ui.run(host="127.0.0.1", title="Skill Manager", reload=False)
+    ui.run(title="Skill Manager", reload=False, native=True, window_size=(1400, 900))
