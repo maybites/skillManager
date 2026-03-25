@@ -13,6 +13,7 @@ from skillmanager.models import Skill
 from skillmanager.operations import (
     add_project,
     clone_repo,
+    copy_skill,
     create_symlink,
     detect_skills,
     extract_skill_description,
@@ -20,6 +21,7 @@ from skillmanager.operations import (
     find_source_symlinks,
     git_pull,
     make_dest_path,
+    remove_copy,
     remove_source_repo,
     remove_symlink,
     scan_broken_symlinks,
@@ -839,7 +841,10 @@ def run() -> None:
                                                 )
 
                                             if not is_missing:
-                                                cell_state = {"is_symlink": is_symlink}
+                                                cell_state = {
+                                                    "is_symlink": is_symlink,
+                                                    "is_copied": is_copied,
+                                                }
 
                                                 def _on_link_click(
                                                     _link: ui.icon = link_icon,
@@ -902,6 +907,40 @@ def run() -> None:
                                                         )
 
                                                 link_icon.on("click", _on_link_click)  # type: ignore[misc]
+
+                                                def _on_copy_click(
+                                                    _link: ui.icon = link_icon,
+                                                    _copy: ui.icon = copy_icon,
+                                                    _src: Path = src_path,
+                                                    _dst: Path = symlink_path,
+                                                    _st: dict[str, bool] = cell_state,
+                                                ) -> None:
+                                                    if _st["is_copied"]:
+                                                        op = remove_copy(_dst)
+                                                        if not op.success:
+                                                            ui.notify(op.message, type="negative")
+                                                            return
+                                                        _st["is_copied"] = False
+                                                        _copy.classes(
+                                                            remove="text-green-500",
+                                                            add="text-gray-300",
+                                                        )
+                                                        _link.style(replace="")
+                                                    else:
+                                                        op = copy_skill(_src, _dst)
+                                                        if not op.success:
+                                                            ui.notify(op.message, type="negative")
+                                                            return
+                                                        _st["is_copied"] = True
+                                                        _copy.classes(
+                                                            remove="text-gray-300",
+                                                            add="text-green-500",
+                                                        )
+                                                        _link.style(
+                                                            replace="pointer-events: none; opacity: 0.3"
+                                                        )
+
+                                                copy_icon.on("click", _on_copy_click)  # type: ignore[misc]
 
                                 # Collapsible description below the row
                                 if skill.description:
