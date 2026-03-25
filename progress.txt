@@ -10,6 +10,17 @@
   - Quality check is `pyright` (not mypy); run via `.venv/bin/pyright`
 ---
 
+## 2026-03-25 - US-018
+- Wired copy icon click handler: calls `copy_skill` on empty cell, `remove_copy` on copied cell
+- Added `copy_skill` and `remove_copy` to imports from `skillmanager.operations`
+- Extended `cell_state` dict to track both `is_symlink` and `is_copied`
+- On copy success: copy icon turns green, link icon disabled; on remove: copy icon grays, link icon re-enabled
+- Files changed: `src/skillmanager/main.py`
+- **Learnings for future iterations:**
+  - `copy_skill(src, dst)` uses shutil.copytree; fails if dst exists (returns OperationResult with success=False)
+  - `remove_copy(dst)` uses shutil.rmtree with OSError handling
+---
+
 ## 2026-03-25 - US-017
 - Wired link icon click handler: creates symlink when empty, removes when active
 - Refactored `_show_conflict_dialog` to use `on_confirm`/`on_cancel` callbacks instead of `ui.checkbox` reference
