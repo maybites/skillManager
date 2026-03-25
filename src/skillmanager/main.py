@@ -26,6 +26,7 @@ from skillmanager.operations import (
     remove_copy,
     remove_source_repo,
     remove_symlink,
+    rescan_source_skills,
     scan_broken_symlinks,
     validate_local_path,
     validate_project_paths,
@@ -645,6 +646,16 @@ def run() -> None:
 
         def _render_matrix_view(panel: ui.column) -> None:
             panel.clear()
+
+            # Rescan confirmed sources for new/removed skills
+            needs_save = False
+            for src in config.sources:
+                if not src.confirmed:
+                    continue
+                if rescan_source_skills(src):
+                    needs_save = True
+            if needs_save:
+                save_config(config)
 
             # Backfill descriptions for skills that lack them
             for src in config.sources:

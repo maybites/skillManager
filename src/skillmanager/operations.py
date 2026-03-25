@@ -99,6 +99,41 @@ def detect_skills(source_path: str | Path) -> list[tuple[str, bool]]:
     return results
 
 
+def rescan_source_skills(source: "Source") -> bool:
+    """Re-scan the source directory and add any newly discovered skills.
+
+    Returns True if new skills were added (caller should save config).
+    """
+    from skillmanager.models import Skill
+
+    existing_names = {sk.rel_path for sk in source.skills}
+    candidates = detect_skills(source.path)
+    added = False
+    for rel_path, _enabled in candidates:
+        if rel_path not in existing_names:
+            source.skills.append(
+                Skill(
+                    name=rel_path,
+                    rel_path=rel_path,
+                    enabled=True,
+                    description=extract_skill_description(
+                        Path(source.path) / rel_path
+                    ),
+                )
+            )
+            added = True
+    # Also remove skills whose directories no longer exist
+    root = Path(source.path)
+    before = len(source.skills)
+    source.skills = [
+        sk for sk in source.skills
+        if (root / sk.rel_path).is_dir()
+    ]
+    if len(source.skills) != before:
+        added = True
+    return added
+
+
 def add_project(path: str) -> OperationResult:
     """Validate project path exists and auto-create .claude/skills/ inside it."""
     p = Path(path).expanduser()
