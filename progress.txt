@@ -10,6 +10,20 @@
   - Quality check is `pyright` (not mypy); run via `.venv/bin/pyright`
 ---
 
+## 2026-03-25 - US-016
+- Replaced checkboxes in matrix cells with two icons: `ui.icon("link")` and `ui.icon("content_copy")`
+- State detection: `os.path.islink()` for symlinked, `os.path.exists() and not is_symlink` for copied
+- Styling: `text-blue-500` for active link icon, `text-green-500` for active copy icon, `text-gray-300` for inactive
+- Disabled icons use `pointer-events: none; opacity: 0.3` via `.style()`
+- Cell min-width updated from 120px to 140px; column headers also updated to 140px
+- Matrix title changed from "Symlink Matrix" to "Skill Matrix"
+- Files changed: `src/skillmanager/main.py`
+- **Learnings for future iterations:**
+  - Click handlers for link/copy icons will be added in US-017/US-018 via `link_icon.on("click", handler)`
+  - The `link_icon` and `copy_icon` variables are in scope for each cell iteration, use default-arg trick for closures
+  - `is_missing` flag controls both icons disabled with tooltip "Project path not found"
+---
+
 ## Codebase Patterns
 - `Project.skills_dir` is a `@property` returning `Path(self.path) / ".claude" / "skills"`
 - `add_project(path)` in `operations.py` validates path + auto-creates `.claude/skills/` dir; returns `OperationResult`
