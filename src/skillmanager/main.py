@@ -13,6 +13,7 @@ from skillmanager.models import Skill
 from skillmanager.operations import (
     add_project,
     clone_repo,
+    compute_drift,
     copy_skill,
     create_symlink,
     detect_skills,
@@ -20,6 +21,7 @@ from skillmanager.operations import (
     find_owning_source,
     find_source_symlinks,
     git_pull,
+    is_copy,
     make_dest_path,
     remove_copy,
     remove_source_repo,
@@ -45,6 +47,7 @@ def run() -> None:
         missing_project_ids: dict[str, set[str]] = {
             "ids": validate_project_paths(config.projects)
         }
+        drift_state: dict[str, bool] = {}
 
         def _last_segment(val: str) -> str:
             seg = val.rstrip("/").rsplit("/", 1)[-1]
@@ -265,6 +268,20 @@ def run() -> None:
         def _all_target_dirs() -> list[Path]:
             personal_dir = Path.home() / ".claude" / "skills"
             return [personal_dir] + [p.skills_dir for p in config.projects]
+
+        def _check_drift_for_source(source: "Source") -> None:
+            """Compute drift for all copies of skills from the given source."""
+            for target_dir in _all_target_dirs():
+                for skill in source.skills:
+                    copy_path = target_dir / skill.name
+                    if is_copy(copy_path):
+                        src_path = Path(source.path) / skill.rel_path
+                        drifted = compute_drift(src_path, copy_path)
+                        key = str(copy_path)
+                        if drifted:
+                            drift_state[key] = True
+                        else:
+                            drift_state.pop(key, None)
 
         def _open_remap_dialog(link_path: Path, parent_dialog: ui.dialog) -> None:
             confirmed_skills = [
@@ -509,6 +526,10 @@ def run() -> None:
                         _source.last_updated = datetime.now(timezone.utc).isoformat()
                         save_config(config)
                         _ts_label.set_text(f"Last updated: {_source.last_updated}")
+                        _check_drift_for_source(_source)
+                        panel = detail_ref["panel"]
+                        if panel is not None:
+                            _render_matrix_view(panel)
 
                         broken = scan_broken_symlinks(_all_target_dirs())
                         if broken:
@@ -824,12 +845,25 @@ def run() -> None:
                                                     "pointer-events: none; opacity: 0.3"
                                                 )
 
-                                            # Copy icon
+                                            # Copy icon (with optional drift badge)
                                             copy_cls = (
                                                 "text-xl cursor-pointer "
                                                 + ("text-green-500" if is_copied else "text-gray-300")
                                             )
-                                            copy_icon = ui.icon("content_copy").classes(copy_cls)
+                                            is_drifted = drift_state.get(str(symlink_path), False)
+                                            with ui.element("div").style(
+                                                "position: relative; display: inline-flex"
+                                            ):
+                                                copy_icon = ui.icon("content_copy").classes(copy_cls)
+                                                if is_drifted:
+                                                    ui.element("span").style(
+                                                        "position: absolute; top: -2px; right: -2px; "
+                                                        "width: 8px; height: 8px; "
+                                                        "background-color: #f59e0b; "
+                                                        "border-radius: 50%; pointer-events: auto"
+                                                    ).tooltip(
+                                                        "Source has been updated since this copy was made"
+                                                    )
                                             if is_missing:
                                                 copy_icon.style(
                                                     "pointer-events: none; opacity: 0.4"
@@ -920,6 +954,7 @@ def run() -> None:
                                                         if not op.success:
                                                             ui.notify(op.message, type="negative")
                                                             return
+                                                        drift_state.pop(str(_dst), None)
                                                         _st["is_copied"] = False
                                                         _copy.classes(
                                                             remove="text-green-500",
@@ -1207,13 +1242,20 @@ def run() -> None:
                 f"Updating {len(remote_sources)} remote source(s)…", type="info"
             )
             failed: list[str] = []
+            updated_sources: list[Source] = []
             for src in remote_sources:
                 op = await asyncio.to_thread(git_pull, Path(src.path))
                 if op.success:
                     src.last_updated = datetime.now(timezone.utc).isoformat()
+                    updated_sources.append(src)
                 else:
                     failed.append(f"{src.display_name}: {op.message}")
             save_config(config)
+            for src in updated_sources:
+                _check_drift_for_source(src)
+            panel = detail_ref["panel"]
+            if panel is not None and updated_sources:
+                _render_matrix_view(panel)
             if failed:
                 ui.notify(
                     "Some updates failed:\n" + "\n".join(failed), type="negative"
