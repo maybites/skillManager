@@ -9,14 +9,18 @@ from skillmanager.operations import (
     OperationResult,
     add_project,
     clone_repo,
+    compute_drift,
+    copy_skill,
     create_symlink,
     detect_skills,
     extract_skill_description,
     find_owning_source,
     find_source_symlinks,
     git_pull,
+    is_copy,
     make_dest_path,
     make_slug,
+    remove_copy,
     remove_source_repo,
     remove_symlink,
     scan_broken_symlinks,
@@ -601,3 +605,123 @@ def test_remove_source_repo_deletes_directory(tmp_path):
 def test_remove_source_repo_absent_is_ok(tmp_path):
     result = remove_source_repo(str(tmp_path / "nonexistent"))
     assert result.success is True
+
+
+# --- copy_skill tests ---
+
+
+def test_copy_skill_success(tmp_path):
+    src = tmp_path / "source-skill"
+    src.mkdir()
+    (src / "SKILL.md").write_text("# skill")
+    dst = tmp_path / "target" / "skills" / "source-skill"
+
+    result = copy_skill(src, dst)
+    assert result.success is True
+    assert dst.is_dir()
+    assert not dst.is_symlink()
+    assert (dst / "SKILL.md").read_text() == "# skill"
+
+
+def test_copy_skill_creates_parent_dirs(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "file.md").write_text("content")
+    dst = tmp_path / "a" / "b" / "c" / "skill"
+
+    result = copy_skill(src, dst)
+    assert result.success is True
+    assert dst.is_dir()
+
+
+def test_copy_skill_fails_if_dst_exists(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "file.md").write_text("content")
+    dst = tmp_path / "dst"
+    dst.mkdir()
+
+    result = copy_skill(src, dst)
+    assert result.success is False
+    assert result.message != ""
+
+
+# --- remove_copy tests ---
+
+
+def test_remove_copy_removes_directory(tmp_path):
+    copy_dir = tmp_path / "skill-copy"
+    copy_dir.mkdir()
+    (copy_dir / "file.md").write_text("content")
+
+    result = remove_copy(copy_dir)
+    assert result.success is True
+    assert not copy_dir.exists()
+
+
+def test_remove_copy_fails_if_missing(tmp_path):
+    result = remove_copy(tmp_path / "nonexistent")
+    assert result.success is False
+    assert result.message != ""
+
+
+# --- is_copy tests ---
+
+
+def test_is_copy_regular_directory(tmp_path):
+    d = tmp_path / "skill"
+    d.mkdir()
+    assert is_copy(d) is True
+
+
+def test_is_copy_symlink_is_not_copy(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    link = tmp_path / "link"
+    os.symlink(src, link)
+    assert is_copy(link) is False
+
+
+def test_is_copy_missing_is_not_copy(tmp_path):
+    assert is_copy(tmp_path / "nonexistent") is False
+
+
+# --- compute_drift tests ---
+
+
+def _make_skill_dir(path: Path, files: dict[str, str]) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    for name, content in files.items():
+        (path / name).write_text(content)
+
+
+def test_compute_drift_identical_trees(tmp_path):
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    _make_skill_dir(src, {"SKILL.md": "# skill", "prompt.txt": "hello"})
+    _make_skill_dir(dst, {"SKILL.md": "# skill", "prompt.txt": "hello"})
+    assert compute_drift(src, dst) is False
+
+
+def test_compute_drift_changed_file(tmp_path):
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    _make_skill_dir(src, {"SKILL.md": "# skill v1"})
+    _make_skill_dir(dst, {"SKILL.md": "# skill v2"})
+    assert compute_drift(src, dst) is True
+
+
+def test_compute_drift_added_file(tmp_path):
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    _make_skill_dir(src, {"SKILL.md": "# skill", "new_file.md": "extra"})
+    _make_skill_dir(dst, {"SKILL.md": "# skill"})
+    assert compute_drift(src, dst) is True
+
+
+def test_compute_drift_removed_file(tmp_path):
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    _make_skill_dir(src, {"SKILL.md": "# skill"})
+    _make_skill_dir(dst, {"SKILL.md": "# skill", "old_file.md": "extra"})
+    assert compute_drift(src, dst) is True

@@ -226,6 +226,54 @@ def find_source_symlinks(source: "Source", target_dirs: list[Path]) -> list[Path
     return result
 
 
+def copy_skill(src: Path, dst: Path) -> OperationResult:
+    """Copy skill directory src to dst using shutil.copytree."""
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(str(src), str(dst))
+        return OperationResult(success=True)
+    except OSError as e:
+        return OperationResult(success=False, message=str(e))
+    except Exception as e:
+        return OperationResult(success=False, message=str(e))
+
+
+def remove_copy(dst: Path) -> OperationResult:
+    """Remove a copied skill directory at dst using shutil.rmtree."""
+    try:
+        shutil.rmtree(str(dst))
+        return OperationResult(success=True)
+    except OSError as e:
+        return OperationResult(success=False, message=str(e))
+
+
+def is_copy(path: Path) -> bool:
+    """Return True if path exists, is a directory, and is not a symlink."""
+    return path.exists() and path.is_dir() and not path.is_symlink()
+
+
+def compute_drift(source_skill: Path, copied_skill: Path) -> bool:
+    """Return True if file content SHA-256 hashes differ between source and copy.
+
+    Walks both trees, compares sorted file lists and per-file hashes.
+    """
+    import hashlib
+
+    def _file_hashes(root: Path) -> dict[str, str]:
+        hashes: dict[str, str] = {}
+        for file in sorted(root.rglob("*")):
+            if not file.is_file():
+                continue
+            rel = str(file.relative_to(root))
+            h = hashlib.sha256(file.read_bytes()).hexdigest()
+            hashes[rel] = h
+        return hashes
+
+    src_hashes = _file_hashes(source_skill)
+    dst_hashes = _file_hashes(copied_skill)
+    return src_hashes != dst_hashes
+
+
 def remove_source_repo(source_path: str) -> OperationResult:
     """Delete a cloned remote repo directory using shutil.rmtree."""
     p = Path(source_path)
