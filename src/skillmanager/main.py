@@ -688,6 +688,146 @@ def run() -> None:
                     n for n, c in skill_name_counts.items() if c > 1
                 }
 
+                # Pre-build entry lists so skill cells can append to them during rendering.
+                # col_entries[t_idx]          → all cells in that target column (all sources)
+                # src_entries[(src_id,t_idx)] → cells for one source × one target column
+                col_entries: dict[int, list] = {i: [] for i in range(len(targets))}
+                src_entries: dict[tuple[str, int], list] = {
+                    (_src.id, i): [] for _src in confirmed for i in range(len(targets))
+                }
+
+                def _bulk_link_color(n: int, total: int) -> str:
+                    if n == total:
+                        return "text-blue-500"
+                    if n > 0:
+                        return "text-amber-400"
+                    return "text-gray-300"
+
+                def _bulk_copy_color(n: int, total: int) -> str:
+                    if n == total:
+                        return "text-green-500"
+                    if n > 0:
+                        return "text-amber-400"
+                    return "text-gray-300"
+
+                def _update_cell_link(li: ui.icon, ci: ui.icon, st: dict, active: bool) -> None:
+                    if active:
+                        li.classes(remove="text-gray-300 text-amber-400", add="text-blue-500")
+                        ci.style(replace="pointer-events: none; opacity: 0.3")
+                    else:
+                        li.classes(remove="text-blue-500 text-amber-400", add="text-gray-300")
+                        ci.style(replace="")
+                    st["is_symlink"] = active
+
+                def _update_cell_copy(li: ui.icon, ci: ui.icon, st: dict, active: bool) -> None:
+                    if active:
+                        ci.classes(remove="text-gray-300 text-amber-400", add="text-green-500")
+                        li.style(replace="pointer-events: none; opacity: 0.3")
+                    else:
+                        ci.classes(remove="text-green-500 text-amber-400", add="text-gray-300")
+                        li.style(replace="")
+                    st["is_copied"] = active
+
+                def _attach_bulk_link(
+                    skills: list[tuple[Path, Path]],
+                    icon: ui.icon,
+                    st: dict,
+                    entries: list,
+                    stop: bool = False,
+                ) -> None:
+                    """Attach a bulk-symlink click handler. entries is populated after render."""
+                    event_type = "click.stop" if stop else "click"
+
+                    def _on_click() -> None:
+                        if st["n_symlinked"] == st["total"]:
+                            failed = 0
+                            for src_p, dst in skills:
+                                if os.path.islink(str(dst)):
+                                    op = remove_symlink(dst)
+                                    if op.success:
+                                        for li, ci, cst in entries:
+                                            if cst.get("_dst") == dst:
+                                                _update_cell_link(li, ci, cst, False)
+                                                break
+                                    else:
+                                        failed += 1
+                            if failed:
+                                ui.notify(f"{failed} removals failed", type="negative")
+                        else:
+                            failed = 0
+                            added = 0
+                            for src_p, dst in skills:
+                                if os.path.islink(str(dst)) or is_copy(dst):
+                                    continue
+                                op = create_symlink(src_p, dst)
+                                if op.success:
+                                    for li, ci, cst in entries:
+                                        if cst.get("_dst") == dst:
+                                            _update_cell_link(li, ci, cst, True)
+                                            break
+                                    added += 1
+                                else:
+                                    failed += 1
+                            if failed:
+                                ui.notify(f"{failed} symlinks failed", type="negative")
+                            st["n_symlinked"] += added
+                        st["n_symlinked"] = sum(1 for _, d in skills if os.path.islink(str(d)))
+                        icon.classes(
+                            remove="text-blue-500 text-amber-400 text-gray-300",
+                            add=_bulk_link_color(st["n_symlinked"], st["total"]),
+                        )
+                    icon.on(event_type, _on_click)  # type: ignore[misc]
+
+                def _attach_bulk_copy(
+                    skills: list[tuple[Path, Path]],
+                    icon: ui.icon,
+                    st: dict,
+                    entries: list,
+                    stop: bool = False,
+                ) -> None:
+                    """Attach a bulk-copy click handler. entries is populated after render."""
+                    event_type = "click.stop" if stop else "click"
+
+                    def _on_click() -> None:
+                        if st["n_copied"] == st["total"]:
+                            failed = 0
+                            for src_p, dst in skills:
+                                if is_copy(dst):
+                                    op = remove_copy(dst)
+                                    if op.success:
+                                        for li, ci, cst in entries:
+                                            if cst.get("_dst") == dst:
+                                                _update_cell_copy(li, ci, cst, False)
+                                                break
+                                    else:
+                                        failed += 1
+                            if failed:
+                                ui.notify(f"{failed} removals failed", type="negative")
+                        else:
+                            failed = 0
+                            added = 0
+                            for src_p, dst in skills:
+                                if os.path.islink(str(dst)) or is_copy(dst):
+                                    continue
+                                op = copy_skill(src_p, dst)
+                                if op.success:
+                                    for li, ci, cst in entries:
+                                        if cst.get("_dst") == dst:
+                                            _update_cell_copy(li, ci, cst, True)
+                                            break
+                                    added += 1
+                                else:
+                                    failed += 1
+                            if failed:
+                                ui.notify(f"{failed} copies failed", type="negative")
+                            st["n_copied"] += added
+                        st["n_copied"] = sum(1 for _, d in skills if is_copy(d))
+                        icon.classes(
+                            remove="text-green-500 text-amber-400 text-gray-300",
+                            add=_bulk_copy_color(st["n_copied"], st["total"]),
+                        )
+                    icon.on(event_type, _on_click)  # type: ignore[misc]
+
                 # Header row
                 with ui.row().classes(
                     "items-center border-b-2 border-gray-300 pb-2 mb-2"
@@ -695,15 +835,41 @@ def run() -> None:
                     ui.label("Skill").classes("font-semibold text-sm").style(
                         "width: 260px; min-width: 260px; flex-shrink: 0"
                     )
-                    for target_name, _, is_missing in targets:
+                    for t_idx, (target_name, target_dir, is_missing) in enumerate(targets):
                         col_classes = "font-semibold text-sm text-center"
                         if is_missing:
                             col_classes += " text-gray-400"
-                        lbl = ui.label(target_name).classes(col_classes).style(
-                            "min-width: 140px; white-space: pre-line"
-                        )
-                        if is_missing:
-                            lbl.tooltip("Project path not found")
+                        with ui.element("div").style(
+                            "min-width: 140px; display: flex; flex-direction: column; "
+                            "align-items: center; gap: 4px"
+                        ):
+                            lbl = ui.label(target_name).classes(col_classes).style(
+                                "white-space: pre-line"
+                            )
+                            if is_missing:
+                                lbl.tooltip("Project path not found")
+                                continue
+
+                            col_skills: list[tuple[Path, Path]] = [
+                                (Path(_src.path) / _sk.rel_path, target_dir / _sk.name)
+                                for _src in confirmed for _sk in _src.skills
+                            ]
+                            total_col = len(col_skills)
+                            n_col_sym = sum(1 for _, d in col_skills if os.path.islink(str(d)))
+                            n_col_cop = sum(1 for _, d in col_skills if is_copy(d))
+                            col_link_st = {"n_symlinked": n_col_sym, "total": total_col}
+                            col_copy_st = {"n_copied": n_col_cop, "total": total_col}
+
+                            with ui.element("div").style("display: flex; gap: 8px; align-items: center"):
+                                col_link_icon = ui.icon("link").classes(
+                                    f"text-xl cursor-pointer {_bulk_link_color(n_col_sym, total_col)}"
+                                ).tooltip("Symlink all skills to this target")
+                                col_copy_icon = ui.icon("content_copy").classes(
+                                    f"text-xl cursor-pointer {_bulk_copy_color(n_col_cop, total_col)}"
+                                ).tooltip("Copy all skills to this target")
+
+                            _attach_bulk_link(col_skills, col_link_icon, col_link_st, col_entries[t_idx])
+                            _attach_bulk_copy(col_skills, col_copy_icon, col_copy_st, col_entries[t_idx])
 
                 # Rows grouped by source (collapsible)
                 for source in confirmed:
@@ -735,14 +901,42 @@ def run() -> None:
 
                     with ui.row().classes(
                         "items-center bg-gray-100 px-2 py-1 rounded mt-1 "
-                        "w-full cursor-pointer select-none gap-1"
+                        "w-full cursor-pointer select-none gap-0"
                     ) as header_row:
-                        chevron = ui.icon("chevron_right").classes(
-                            "text-gray-500 text-sm"
-                        ).style("transition: transform 0.2s ease-in-out")
-                        ui.label(
-                            header_label
-                        ).classes("font-bold text-sm text-gray-700")
+                        with ui.element("div").style(
+                            "width: 260px; min-width: 260px; flex-shrink: 0; "
+                            "display: flex; align-items: center; gap: 4px"
+                        ):
+                            chevron = ui.icon("chevron_right").classes(
+                                "text-gray-500 text-sm"
+                            ).style("transition: transform 0.2s ease-in-out")
+                            ui.label(header_label).classes("font-bold text-sm text-gray-700")
+                        # Per-target bulk icons for this source group
+                        for t_idx, (_, target_dir, is_missing) in enumerate(targets):
+                            with ui.element("div").style(
+                                "min-width: 140px; display: flex; justify-content: center; "
+                                "align-items: center; gap: 8px"
+                            ):
+                                if is_missing:
+                                    continue
+                                src_skills: list[tuple[Path, Path]] = [
+                                    (Path(source.path) / sk.rel_path, target_dir / sk.name)
+                                    for sk in source.skills
+                                ]
+                                n_src_sym = sum(1 for _, d in src_skills if os.path.islink(str(d)))
+                                n_src_cop = sum(1 for _, d in src_skills if is_copy(d))
+                                total_src = len(src_skills)
+                                src_link_st = {"n_symlinked": n_src_sym, "total": total_src}
+                                src_copy_st = {"n_copied": n_src_cop, "total": total_src}
+                                entries_key = (source.id, t_idx)
+                                src_link_icon = ui.icon("link").classes(
+                                    f"text-base cursor-pointer {_bulk_link_color(n_src_sym, total_src)}"
+                                ).tooltip(f"Symlink all {source.display_name} skills to this target")
+                                src_copy_icon = ui.icon("content_copy").classes(
+                                    f"text-base cursor-pointer {_bulk_copy_color(n_src_cop, total_src)}"
+                                ).tooltip(f"Copy all {source.display_name} skills to this target")
+                                _attach_bulk_link(src_skills, src_link_icon, src_link_st, src_entries[entries_key], stop=True)
+                                _attach_bulk_copy(src_skills, src_copy_icon, src_copy_st, src_entries[entries_key], stop=True)
 
                     skills_container = ui.column().classes("w-full gap-0").style(
                         "overflow: hidden; max-height: 0; height: 0; "
@@ -823,7 +1017,7 @@ def run() -> None:
                                                 "Conflict: another source has a "
                                                 "skill with the same name"
                                             )
-                                    for _, target_dir, is_missing in targets:
+                                    for t_idx, (_, target_dir, is_missing) in enumerate(targets):
                                         symlink_path = target_dir / skill.name
                                         src_path = Path(source.path) / skill.rel_path
                                         is_symlink = os.path.islink(str(symlink_path))
@@ -883,6 +1077,11 @@ def run() -> None:
                                                     "is_symlink": is_symlink,
                                                     "is_copied": is_copied,
                                                 }
+                                                # Register cell for bulk handlers
+                                                cell_state["_dst"] = symlink_path  # type: ignore[assignment]
+                                                cell_entry = (link_icon, copy_icon, cell_state)
+                                                col_entries[t_idx].append(cell_entry)
+                                                src_entries[(source.id, t_idx)].append(cell_entry)
 
                                                 def _on_link_click(
                                                     _link: ui.icon = link_icon,
